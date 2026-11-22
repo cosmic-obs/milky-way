@@ -179,7 +179,7 @@ input[type="range"]::-moz-range-thumb { width: 16px; height: 16px; border-radius
     <li><i aria-hidden="true"><svg width="26" height="14" viewBox="0 0 26 14"><ellipse cx="13" cy="7" rx="4.2" ry="2.2" transform="rotate(-28 13 7)" fill="none" stroke="#c9b8ff" stroke-width="1.2"/></svg></i><span>Messier galaxy: they keep away from the band, where dust hides what lies beyond</span></li>
   </ul>
   <p>Pick a night and a time with the sliders, or press Play to watch the horizon sweep across the band through the night. Drag to slide the band, pinch or scroll to zoom, and tap anything (or hover over it) to see where it is in your sky.</p>
-  <p>The band is drawn from a model of the Milky Way's brightness and dust lanes, not a photograph. The stars, the Sun, the Moon and the Messier objects are at their real places.</p>
+  <p>The picture of the Milky Way is from NASA's <a href="https://svs.gsfc.nasa.gov/4851" target="_blank" rel="noopener">Deep Star Maps 2020</a> (NASA/Goddard Space Flight Center Scientific Visualization Studio; Gaia DR2: ESA/Gaia/DPAC). The stars, the Sun, the Moon and the Messier objects drawn over it are at their real places.</p>
   <p class="more">More night-sky pages: <a href="../messier/">Messier Calendar</a> · <a href="../planets/">Planet Calendar</a> · <a href="../searchlight/">Galaxy Searchlight</a> · <a href="../">all</a></p>
 </section>
 
@@ -646,65 +646,38 @@ function showTip(lines, x, y) {
 function hideTip() { tip.hidden = true; tipAt0 = null; }
 function refreshTip() { if (tipAt0 && !tip.hidden) { const t = pick(tipAt0.x, tipAt0.y); t ? showTip(t, tipAt0.x, tipAt0.y) : hideTip(); } }
 
-// ---------- the Milky Way as a picture in galactic longitude and latitude: drawn from a model, a stand-in for a survey ----------
-function hash(i, j, s) { let h = (i * 374761393 + j * 668265263 + s * 1442695041) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; }
-function vnoise(x, y, period, s) {
-  const i = Math.floor(x), j = Math.floor(y), fx = x - i, fy = y - j, u = fx * fx * (3 - 2 * fx), v = fy * fy * (3 - 2 * fy);
-  const a = hash(mod(i, period), j, s), b = hash(mod(i + 1, period), j, s), c = hash(mod(i, period), j + 1, s), d = hash(mod(i + 1, period), j + 1, s);
-  return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+// ---------- the Milky Way: NASA's Deep Star Maps 2020 picture in galactic coordinates, in three levels of detail ----------
+// sky/0.jpg is the whole sky at 2048 x 1024; sky/1-<col>-<row>.jpg and sky/2-<col>-<row>.jpg are 1024-pixel tiles of the 4096
+// and 8192 versions, fetched only where the screen has more pixels per degree than the level below can give.
+const SKY_LEVELS = [{ cols: 1, rows: 1 }, { cols: 4, rows: 2 }, { cols: 8, rows: 4 }];
+const tiles = new Map();
+function tile(level, col, row, fetch = true) {
+  const key = level ? `${level}-${col}-${row}` : '0';
+  let t = tiles.get(key);
+  if (!t && fetch) {
+    t = { img: new Image(), ok: false };
+    t.img.decoding = 'async';
+    t.img.onload = () => { t.ok = true; invalidate(); };
+    t.img.src = `sky/${key}.jpg`;
+    tiles.set(key, t);
+  }
+  return t;
 }
-function fbm(L, b, s0 = 0) { // L in [0, 360): every cell size divides 360, so the noise wraps round the sky
-  let t = 0, amp = 0.5, sum = 0;
-  for (const [cell, s] of [[8, 1], [3, 2], [1.2, 3], [0.5, 4]]) { t += amp * vnoise(L / cell, b / cell, Math.round(360 / cell), s + s0); sum += amp; amp *= 0.55; }
-  return t / sum;
-}
-const gss = (x, s) => Math.exp(-x * x / (2 * s * s));
-const win = (x, a, b, s) => 1 / (1 + Math.exp(-(x - a) / s)) / (1 + Math.exp((x - b) / s));
-// brightness at longitude l (-180 to 180) and latitude b, in degrees
-function mwI(l, b) {
-  const L = mod(l, 360), n = fbm(L, b), n2 = fbm(L, b * 1.6, 9);
-  const A = 0.2 + 0.6 * gss(l, 34) + 0.3 * gss(l - 78, 15) + 0.2 * gss(l + 72, 20) + 0.14 * gss(l - 27, 7) + 0.1 * gss(l - 135, 25);
-  const w = 2.4 + 3.6 * gss(l, 24) + 1.3 * gss(l - 75, 18);
-  let I = A * (gss(b + 0.4, w) + 0.32 * gss(b, w * 2.7));
-  I += 0.6 * Math.exp(-1.5 * Math.hypot(l / 10, b / 7.5)); // the bulge
-  I += 0.4 * gss(Math.hypot((l - 1.5) / 1.4, (b + 4.6) / 1.0), 3.2) // the Large Sagittarius Star Cloud
-    + 0.24 * gss(Math.hypot((l - 12) / 1.2, b + 0.9), 1.4) // M24
-    + 0.18 * gss(Math.hypot((l - 27.5) / 1.3, b + 2.6), 1.6); // the Scutum cloud
-  I *= 0.42 + 1.15 * n;
-  // dust: the central lane, the Great Rift from Aquila to Cygnus, the Ophiuchus clouds and the Coalsack
-  const D = 0.9 * gss(b - 0.7, 1.1 + 0.7 * n2) * win(l, -60, 40, 8)
-    + 0.8 * gss(b - 1.6 - 0.045 * (70 - l), 1.7 + 0.5 * n2) * win(l, -4, 86, 3)
-    + 0.6 * gss(Math.hypot((l - 3) / 1.7, (b - 10) / 1.3), 4.5)
-    + 0.75 * gss(Math.hypot(l + 59, b + 0.8), 2.2);
-  return I * Math.max(0, 1 - D * (0.55 + 0.65 * n2));
-}
-// the picture: a quarter of a degree a pixel, b from +50° (top) to -50°, l from +180° (left) to -180°
-const TEX = { W: 1440, H: 400, B: 50, cv: null };
-function texture() {
-  if (TEX.cv) return TEX.cv;
-  const { W, H, B } = TEX, cv = document.createElement('canvas');
-  cv.width = W; cv.height = H;
-  const c = cv.getContext('2d'), img = c.createImageData(W, H), px = img.data;
-  for (let y = 0; y < H; y++) {
-    const b = B - (y + 0.5) / H * 2 * B;
-    for (let x = 0; x < W; x++) {
-      const l = 180 - (x + 0.5) / W * 360, v = 1 - Math.exp(-1.75 * mwI(l, b)), warm = clamp(1.3 * Math.exp(-Math.hypot(l / 15, b / 10)), 0, 1), k = (y * W + x) * 4;
-      px[k] = 200 + 55 * warm; px[k + 1] = 214 + 8 * warm; px[k + 2] = 255 - 75 * warm; px[k + 3] = 255 * Math.min(1, v * 1.08);
+// the picture spans x0 to x0 + 360k across and yN to yN + 180k down; a missing tile leaves the coarser level showing
+function drawSky(x0, yN, k) {
+  const Wf = 360 * k, Hf = 180 * k, ppd = k * dpr; // device pixels per degree
+  const top = ppd > 12.5 ? 2 : ppd > 6.3 ? 1 : 0;
+  ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+  for (let level = 0; level <= top; level++) {
+    const { cols, rows } = SKY_LEVELS[level], tw = Wf / cols, th = Hf / rows;
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      const x = x0 + c * tw, y = yN + r * th;
+      if (x > W || x + tw < 0 || y > H || y + th < 0) continue;
+      const t = tile(level, c, r, level === 0 || level === top);
+      if (t && t.ok) ctx.drawImage(t.img, x, y, tw, th);
     }
   }
-  c.putImageData(img, 0, 0);
-  return (TEX.cv = cv);
 }
-// faint field stars over the whole sky, thicker toward the plane
-const FIELD = (() => {
-  let s = 7; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647, out = [];
-  for (let i = 0; i < 9000; i++) {
-    const l = rnd() * 360, b = Math.asin(2 * rnd() - 1) * R2D, m = rnd();
-    if (rnd() > 0.16 + 0.84 * Math.exp(-b * b / 300)) continue;
-    out.push([l, b, 0.18 + 0.55 * m * m, m > 0.96 ? 1.5 : 1]);
-  }
-  return out;
-})();
 
 // ---------- bright stars and a few stick figures, to get your bearings by (J2000 RA in hours, Dec, magnitude) ----------
 const STARS = [
@@ -762,19 +735,21 @@ const BAND_LABELS = [[7, 'SAGITTARIUS'], [42, 'AQUILA'], [80, 'CYGNUS'], [118, '
 const MSHOW = new Set([1, 8, 11, 13, 16, 17, 20, 22, 27, 31, 33, 42, 44, 45, 51, 57, 81, 87, 101, 104]);
 
 // ---------- the view: longitude across (the centre of the galaxy in the middle, longitude increasing to the left), latitude up ----------
+// The map has fixed edges at longitude +180° (left) and −180° (right), the anticentre, and the view never slides past them.
 const cv = $('view'), ctx = cv.getContext('2d');
-const view = { lc: 0, bc: 0, k: 0 };
+const view = { lc: 0, bc: 0, k: 0 }; // lc, the longitude at the middle of the screen, runs from -180 to 180
 let W = 0, H = 0, dpr = 1, mapTop = 0, mapBot = 0, kFit = 1, dirty = true;
 const yMid = () => (mapTop + mapBot) / 2;
-const X = l => W / 2 - wrap180(l - view.lc) * view.k;
+const X = l => W / 2 - (wrap180(l) - view.lc) * view.k;
 const Y = b => yMid() - (b - view.bc) * view.k;
-const lOf = x => mod(view.lc + (W / 2 - x) / view.k, 360);
+const lOf = x => view.lc + (W / 2 - x) / view.k;
 const bOf = y => view.bc + (yMid() - y) / view.k;
+const seam = (xa, xb) => Math.abs(xa - xb) > 180 * view.k; // two neighbouring points on either side of the map's edge
 function clampView() {
   view.k = clamp(view.k, kFit, Math.max(kFit * 8, 30));
-  const half = (mapBot - mapTop) / 2 / view.k;
+  const half = (mapBot - mapTop) / 2 / view.k, across = W / 2 / view.k;
   view.bc = half >= 90 ? 0 : clamp(view.bc, -90 + half, 90 - half);
-  view.lc = mod(view.lc, 360);
+  view.lc = across >= 180 ? 0 : clamp(view.lc, -180 + across, 180 - across);
 }
 function layout() {
   W = window.innerWidth; H = window.innerHeight; dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -840,7 +815,7 @@ function strokeRun(pts) {
   for (const g of pts) {
     if (!g) { px = null; continue; }
     const [l, b] = lonLat(g), x = X(l), y = Y(b);
-    if (px === null || Math.abs(x - px) > W / 2) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    if (px === null || seam(x, px)) ctx.moveTo(x, y); else ctx.lineTo(x, y);
     px = x;
   }
   ctx.stroke();
@@ -862,19 +837,10 @@ function draw() {
   boxes = [];
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
-  const yN = Y(90), yS = Y(-90);
+  const yN = Y(90), yS = Y(-90), Wf = 360 * k, x0 = W / 2 - (180 - view.lc) * k;
   ctx.fillStyle = 'rgb(11,20,38)'; ctx.fillRect(0, yN, W, yS - yN);
-  // the Milky Way, three copies so it wraps
-  const tex = texture(), Wf = 360 * k, x0 = W / 2 - (180 - wrap180(view.lc)) * k;
-  ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
-  for (let n = -1; n <= 1; n++) ctx.drawImage(tex, x0 + n * Wf, Y(TEX.B), Wf, 2 * TEX.B * k);
-  // field stars
-  const ds = Math.min(1.6, 0.6 + k / 10);
-  for (const [l, b, a, r] of FIELD) {
-    const x = X(l), y = Y(b);
-    if (x < -2 || x > W + 2 || y < -2 || y > H + 2) continue;
-    ctx.fillStyle = `rgba(236,241,255,${a.toFixed(2)})`; ctx.fillRect(x, y, r * ds, r * ds);
-  }
+  // the Milky Way
+  drawSky(x0, yN, k);
   // a faint grid: latitude every 30°, longitude ticks along the bottom
   ctx.strokeStyle = 'rgba(147,160,181,0.16)'; ctx.lineWidth = 1; ctx.setLineDash([1, 5]);
   for (const b of [-60, -30, 30, 60]) { ctx.beginPath(); ctx.moveTo(0, Y(b)); ctx.lineTo(W, Y(b)); ctx.stroke(); }
@@ -883,7 +849,7 @@ function draw() {
   ctx.strokeStyle = 'rgba(190,204,228,0.22)'; ctx.lineWidth = 1;
   for (const [a, b] of FIGURES) {
     const p = STAR[a], q = STAR[b], xa = X(p.l), xb = X(q.l);
-    if (Math.abs(xa - xb) > W / 2) continue;
+    if (seam(xa, xb)) continue;
     ctx.beginPath(); ctx.moveTo(xa, Y(p.b)); ctx.lineTo(xb, Y(q.b)); ctx.stroke();
   }
   for (const s of STARS) {
@@ -911,7 +877,7 @@ function draw() {
   const hc = hatchCv.getContext('2d');
   hc.setTransform(1, 0, 0, 1, 0, 0); hc.globalCompositeOperation = 'source-over'; hc.clearRect(0, 0, hatchCv.width, hatchCv.height);
   hc.imageSmoothingEnabled = true;
-  for (let n = -1; n <= 1; n++) hc.drawImage(mask, (x0 + n * Wf) * dpr, yN * dpr, Wf * dpr, (yS - yN) * dpr);
+  hc.drawImage(mask, x0 * dpr, yN * dpr, Wf * dpr, (yS - yN) * dpr);
   hc.globalCompositeOperation = 'source-in'; hc.drawImage(hatchPattern(), 0, 0);
   ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(hatchCv, 0, 0); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   // 30° and 60° up, dotted rings round the overhead point
@@ -926,7 +892,7 @@ function draw() {
     const [l, b] = lonLat(atAltAz(0, az, F)), [l2, b2] = lonLat(atAltAz(6, az, F)), x = X(l), y = Y(b);
     if (x < 6 || x > W - 6 || y < mapTop || y > mapBot) continue;
     let dx = X(l2) - x, dy = Y(b2) - y, n = Math.hypot(dx, dy);
-    if (!n || n > W / 2) { dx = 0; dy = Z[2] > 0 ? -1 : 1; n = 1; } // across the map's edge: just point up the sky
+    if (!n || seam(x, X(l2))) { dx = 0; dy = Z[2] > 0 ? -1 : 1; n = 1; } // across the map's edge: just point up the sky
     dx /= n; dy /= n;
     const major = az % 90 === 0;
     ctx.strokeStyle = C.accent; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + dx * 5, y + dy * 5); ctx.stroke();
@@ -942,8 +908,9 @@ function draw() {
     ctx.fillStyle = C.sun; ctx.beginPath(); ctx.arc(x, y, 6, 0, TAU); ctx.fill();
     halo(ctx, 'Sun', x, y + 15, FONT(10, 600), C.sun); boxes.push({ x: x - 14, y: y - 8, w: 28, h: 30 }); }
   { const [l, b] = lonLat(moon.g), x = X(l), y = Y(b);
+    if (x > -6 && x < W + 6) {
     moonDisc(ctx, x, y, 5.5, moon.lit, moon.waxing);
-    halo(ctx, `Moon ${Math.round(moon.lit * 100)}%`, clamp(x, 36, W - 36), y + 14, FONT(10, 600), '#fff0d6'); boxes.push({ x: x - 30, y: y - 8, w: 60, h: 30 }); }
+    halo(ctx, `Moon ${Math.round(moon.lit * 100)}%`, clamp(x, 36, W - 36), y + 14, FONT(10, 600), '#fff0d6'); boxes.push({ x: x - 30, y: y - 8, w: 60, h: 30 }); } }
   // Sgr A*
   const gAlt = altAz(SGR.g, F)[0], xg = X(359.944), yg = Y(-0.046);
   ctx.strokeStyle = C.core; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.arc(xg, yg, 6, 0, TAU); ctx.stroke();
@@ -1013,7 +980,7 @@ function pick(x, y) {
   for (const o of MESSIER) { const d = Math.hypot(o.x - x, o.y - y); if (d < bd) { bd = d; best = o; } }
   if (best) return [`${best.id}${best.name ? ` · ${best.name}` : ''}`, TYPE_NAME[best.type] || best.type, where(best.g)];
   for (const s of STARS) if (near(X(s.l), Y(s.b))) return [s.name, `magnitude ${s.mag.toFixed(1)}`, where(s.g)];
-  const l = lOf(x), b = bOf(y);
+  const l = mod(lOf(x), 360), b = bOf(y);
   if (Math.abs(b) > 90) return null;
   const g = galVec(l, b);
   return [Math.abs(b) < 12 ? `In ${along(l)}` : 'Sky', `longitude ${l.toFixed(0)}°, latitude ${b >= 0 ? '+' : '−'}${Math.abs(b).toFixed(0)}°`, where(g)];

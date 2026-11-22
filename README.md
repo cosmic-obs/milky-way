@@ -6,4 +6,7 @@ Play to watch the horizon sweep across the band.
 
 Live at https://cosmic-obs.github.io/milky-way/
 
-The page (`index.html`) is published from the milky-way-unrolled project.
+The picture of the Milky Way is from NASA's Deep Star Maps 2020 (https://svs.gsfc.nasa.gov/4851): NASA/Goddard Space
+Flight Center Scientific Visualization Studio; Gaia DR2: ESA/Gaia/DPAC. It is in `sky/`, at three levels of detail.
+
+The page (`index.html`) and the picture (`sky/`) are published from the milky-way-unrolled project.
