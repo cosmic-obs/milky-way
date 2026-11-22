@@ -1,0 +1,1079 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<script>
+  // the page zooms itself (pinch on the picture), so Safari's own pinch zoom of the whole page is turned off
+  document.addEventListener('gesturestart', e => e.preventDefault());
+</script>
+<meta name="theme-color" content="#070d1a">
+<meta name="description" content="The whole Milky Way laid flat, with your horizon moving across it as a wave line through the night.">
+<title>Milky Way Unrolled</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: the picture fills the screen. The Key and place buttons and a one-line reading float at the top; the night
+   and time sliders run along the bottom, as in the calendars' sky view. Dialogs are placed by script. */
+:root {
+  color-scheme: dark;
+  --bg: #070d1a;
+  --panel: rgba(9, 15, 28, 0.9);
+  --line: rgba(147, 160, 181, 0.26);
+  --ink: #e3e9f2;
+  --soft: #93a0b5;
+  --accent: #5fd0dc;
+  --font-ui: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-data: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+html, body {
+  height: 100%; margin: 0; overflow: hidden; overscroll-behavior: none;
+  background: var(--bg); color: var(--ink); font: 400 14px/1.45 var(--font-ui);
+  -webkit-tap-highlight-color: transparent;
+}
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+[hidden] { display: none !important; }
+* { touch-action: manipulation; }
+#view { position: fixed; inset: 0; display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; -webkit-user-select: none; user-select: none; }
+#view.dragging { cursor: grabbing; }
+
+.pill {
+  display: inline-flex; align-items: center; gap: 7px; padding: 8px 13px; flex: none; white-space: nowrap; cursor: pointer;
+  font: 500 12px/1 var(--font-data); background: var(--panel); border: 1px solid var(--line); border-radius: 999px;
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+}
+.toggle { color: var(--soft); }
+.toggle[aria-pressed="true"] { color: var(--bg); background: #d5dce6; border-color: #d5dce6; }
+#placebtn { max-width: 40vw; overflow: hidden; text-overflow: ellipsis; display: inline-block; }
+
+.hud-top {
+  position: fixed; z-index: 2; top: calc(env(safe-area-inset-top, 0px) + 10px);
+  left: max(12px, env(safe-area-inset-left, 0px)); right: max(12px, env(safe-area-inset-right, 0px));
+  pointer-events: none;
+}
+.hud-top > * { pointer-events: auto; }
+.bar { display: flex; align-items: center; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+.bar::-webkit-scrollbar { display: none; }
+.bar .spacer { flex: 1; }
+.caption {
+  width: fit-content; max-width: min(640px, 100%); margin: 8px 0 0; padding: 7px 11px; box-sizing: border-box;
+  font: 400 12px/1.5 var(--font-data); color: var(--ink); background: rgba(7, 13, 26, 0.72); border: 1px solid var(--line); border-radius: 10px;
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+}
+.caption { cursor: pointer; }
+.caption b { font-weight: 600; color: var(--accent); }
+.caption .soft { color: var(--soft); }
+.caption.folded { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.caption.folded br, .caption.folded .soft { display: none; }
+
+.hud-bottom {
+  position: fixed; z-index: 2; left: 0; right: 0; bottom: 0;
+  padding: 28px max(18px, env(safe-area-inset-right, 0px)) calc(env(safe-area-inset-bottom, 0px) + 10px) max(18px, env(safe-area-inset-left, 0px));
+  background: linear-gradient(to top, rgba(7, 13, 26, 0.96), rgba(7, 13, 26, 0.78) 65%, rgba(7, 13, 26, 0));
+  pointer-events: none;
+}
+.sliders { max-width: 720px; margin: 0 auto; display: grid; pointer-events: auto; }
+.row { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 24px; }
+.lbl { font: 500 13px var(--font-data); font-variant-numeric: tabular-nums; }
+.state { margin-left: 8px; color: var(--soft); font: 400 12px var(--font-data); }
+.chip {
+  padding: 4px 11px; cursor: pointer; font: 500 12px var(--font-data);
+  background: transparent; border: 1px solid var(--line); border-radius: 999px;
+}
+.chip[aria-pressed="true"] { color: var(--bg); background: #d5dce6; border-color: #d5dce6; }
+.step { display: flex; align-items: center; gap: 4px; }
+.step > input { flex: 1; min-width: 0; }
+.arrow {
+  flex: none; width: 34px; height: 34px; padding: 0; background: none; border: 0; border-radius: 8px; cursor: pointer;
+  color: var(--soft); font: 500 20px/1 var(--font-data); touch-action: manipulation;
+}
+.arrow:hover, .arrow:active { color: var(--ink); background: rgba(147, 160, 181, 0.14); }
+input[type="range"] { -webkit-appearance: none; appearance: none; width: 100%; height: 34px; margin: 0; background: transparent; cursor: pointer; }
+input[type="range"]::-webkit-slider-runnable-track { height: 6px; border-radius: 3px; background: var(--track, rgba(147, 160, 181, 0.3)); }
+input[type="range"]::-moz-range-track { height: 6px; border-radius: 3px; background: var(--track, rgba(147, 160, 181, 0.3)); }
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 24px; height: 24px; margin-top: -9px; border-radius: 50%;
+  background: #e8edf5; border: 4px solid #0a1222; box-shadow: 0 0 0 1px rgba(147, 160, 181, 0.6);
+}
+input[type="range"]::-moz-range-thumb { width: 16px; height: 16px; border-radius: 50%; background: #e8edf5; border: 4px solid #0a1222; }
+
+.tip {
+  position: fixed; z-index: 2; margin: 0; padding: 6px 10px; max-width: 280px; pointer-events: none;
+  display: grid; gap: 1px; font: 400 12px/1.4 var(--font-data); font-variant-numeric: tabular-nums;
+  color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+}
+.tip b { font-weight: 600; color: var(--accent); }
+.tip span { color: var(--ink); }
+
+.zoom { position: fixed; z-index: 2; right: max(12px, env(safe-area-inset-right, 0px)); display: grid; gap: 6px; }
+.zbtn {
+  width: 38px; height: 38px; border-radius: 10px; display: grid; place-items: center; cursor: pointer;
+  font: 500 18px/1 var(--font-data); background: var(--panel); border: 1px solid var(--line);
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+}
+
+.panel {
+  position: fixed; z-index: 3; left: 0; top: 0; width: min(420px, calc(100% - 40px)); padding: 14px 16px 15px; box-sizing: border-box;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 14px; overflow: auto;
+  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55);
+}
+.panel-top { display: flex; align-items: baseline; gap: 8px; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
+.panel-top.dragging { cursor: grabbing; }
+.panel-top span { flex: 1; }
+.panel h2 { margin: 0 0 2px; font: 600 16px var(--font-ui); }
+.panel p { margin: 0; }
+.x { background: none; border: 0; color: var(--soft); font-size: 22px; line-height: 1; padding: 0 2px; cursor: pointer; }
+.sub { color: var(--soft); font-size: 13px; margin-top: 2px !important; }
+.key p { color: var(--soft); font-size: 13px; margin-top: 8px; }
+.key p:first-of-type { color: var(--ink); font-size: 14px; }
+.key ul { list-style: none; margin: 10px 0; padding: 0; display: grid; gap: 6px; font-size: 13px; }
+.key li { display: flex; align-items: center; gap: 10px; }
+.key li > i:first-child { flex: none; display: inline-grid; place-items: center; width: 26px; height: 14px; }
+.key a { color: var(--accent); }
+.key .more { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+.place form { display: flex; gap: 6px; margin: 12px 0 8px; }
+.place input {
+  flex: 1; min-width: 0; padding: 8px 13px; border-radius: 999px; border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.04); color: var(--ink); font: 400 14px var(--font-ui);
+}
+.place ul { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 2px; }
+.place li button { width: 100%; text-align: left; background: none; border: 0; border-radius: 8px; padding: 7px 8px; cursor: pointer; }
+.place li button:hover, .place li button:focus-visible { background: rgba(255, 255, 255, 0.06); }
+.place li small, .place .now { display: block; color: var(--soft); font: 400 12px var(--font-data); }
+.place .msg:empty { display: none; }
+@media (max-width: 520px) { .caption { font-size: 11px; padding: 6px 9px; } .pill { padding: 7px 11px; } }
+</style>
+</head>
+<body>
+<canvas id="view" aria-label="The Milky Way laid flat in galactic coordinates, with the local horizon drawn across it as a wave line."></canvas>
+
+<header class="hud-top" id="hud-top">
+  <div class="bar">
+    <button type="button" class="pill" id="keybtn" aria-expanded="false" aria-controls="key">Key</button>
+    <button type="button" class="pill" id="placebtn" aria-expanded="false" aria-controls="place">Dublin</button>
+
+  </div>
+  <p class="caption" id="caption" aria-live="polite"></p>
+</header>
+<div class="zoom" id="zoom">
+  <button type="button" class="zbtn" id="zin" aria-label="Zoom in">+</button>
+  <button type="button" class="zbtn" id="zout" aria-label="Zoom out">−</button>
+  <button type="button" class="zbtn" id="zfit" aria-label="Show it all">⤢</button>
+</div>
+<p class="tip" id="tip" hidden></p>
+
+<section class="panel key" id="key" hidden>
+  <div class="panel-top"><h2>Milky Way Unrolled · <span class="place-name">Dublin</span></h2><span></span><button type="button" class="x" id="key-close" aria-label="Close">×</button></div>
+  <p>The whole Milky Way laid flat. Its plane runs across the middle, with the centre of the galaxy in the middle of the picture and longitude increasing to the left. Your horizon is the wave: as the Earth turns, it rolls across the band.</p>
+  <ul>
+    <li><i aria-hidden="true"><svg width="26" height="14" viewBox="0 0 26 14"><path d="M1 10C6 10 8 3 13 3s7 8 12 8" fill="none" stroke="#5fd0dc" stroke-width="1.8"/></svg></i><span>Your horizon, with its compass points. The sky below it is dimmed</span></li>
+    <li><i aria-hidden="true"><svg width="26" height="14" viewBox="0 0 26 14"><rect x="1" y="1" width="24" height="12" fill="rgba(7,13,26,0.6)"/><path d="M-3 13l12-12M4 13l12-12M11 13l12-12M18 13l12-12" stroke="rgba(160,172,196,0.8)" stroke-width="1"/></svg></i><span>Hatched: the part of the sky that never rises from <span class="place-name">Dublin</span></span></li>
+    <li><i aria-hidden="true"><svg width="26" height="14" viewBox="0 0 26 14"><path d="M13 1v12M7 7h12" stroke="#5fd0dc" stroke-width="1.5"/></svg></i><span>Overhead, with dotted rings at 30° and 60° up</span></li>
+    <li><i aria-hidden="true"><svg width="26" height="14" viewBox="0 0 26 14"><path d="M1 7h24" stroke="rgba(198,168,255,0.8)" stroke-width="1.2" stroke-dasharray="4 3"/></svg></i><span>The ecliptic: the Sun's path, near which the Moon and planets run</span></li>
+    <li><i aria-hidden="true"><svg width="26" height="14" viewBox="0 0 26 14"><circle cx="13" cy="7" r="5" fill="none" stroke="#f2c27b" stroke-width="1.6"/></svg></i><span>Sgr A*, the black hole at the centre of the galaxy, 26,700 light-years away</span></li>
+    <li><i aria-hidden="true"><svg width="26" height="14" viewBox="0 0 26 14"><g fill="none" stroke="#ffd59a" stroke-width="1.2"><circle cx="13" cy="7" r="3.6"/><path d="M9.4 7h7.2M13 3.4v7.2"/></g></svg></i><span>Messier globular cluster</span></li>
+    <li><i aria-hidden="true"><svg width="26" height="14" viewBox="0 0 26 14"><circle cx="13" cy="7" r="2.8" fill="#bcd4ff"/></svg></i><span>Messier open cluster</span></li>
+    <li><i aria-hidden="true"><svg width="26" height="14" viewBox="0 0 26 14"><path d="M13 3.2l3.8 3.8-3.8 3.8-3.8-3.8z" fill="#ff9fbd"/></svg></i><span>Messier nebula (bright, planetary or supernova remnant)</span></li>
+    <li><i aria-hidden="true"><svg width="26" height="14" viewBox="0 0 26 14"><ellipse cx="13" cy="7" rx="4.2" ry="2.2" transform="rotate(-28 13 7)" fill="none" stroke="#c9b8ff" stroke-width="1.2"/></svg></i><span>Messier galaxy: they keep away from the band, where dust hides what lies beyond</span></li>
+  </ul>
+  <p>Pick a night and a time with the sliders, or press Play to watch the horizon sweep across the band through the night. Drag to slide the band, pinch or scroll to zoom, and tap anything (or hover over it) to see where it is in your sky.</p>
+  <p>The band is drawn from a model of the Milky Way's brightness and dust lanes, not a photograph. The stars, the Sun, the Moon and the Messier objects are at their real places.</p>
+  <p class="more">More night-sky pages: <a href="../messier/">Messier Calendar</a> · <a href="../planets/">Planet Calendar</a> · <a href="../searchlight/">Galaxy Searchlight</a> · <a href="../">all</a></p>
+</section>
+
+<section class="panel place" id="place" hidden>
+  <div class="panel-top"><h2>Location</h2><span></span><button type="button" class="x" id="place-close" aria-label="Close">×</button></div>
+  <p class="now" id="place-now"></p>
+  <form id="place-form" role="search">
+    <input id="place-q" type="search" placeholder="Town or city" autocomplete="off" aria-label="Town or city">
+    <button type="submit" class="pill">Search</button>
+  </form>
+  <ul id="place-results"></ul>
+  <p class="sub msg" id="place-msg"></p>
+  <button type="button" class="pill" id="place-here">Use my location</button>
+</section>
+
+<footer class="hud-bottom" id="hud-bottom">
+  <div class="sliders">
+    <div class="row">
+      <label class="lbl" for="date" id="date-label">Tonight</label>
+      <button type="button" class="chip" id="now" hidden>Now</button>
+    </div>
+    <div class="step">
+      <button type="button" class="arrow" data-step="night" data-by="-1" aria-label="Previous night">‹</button>
+      <input type="range" id="date" min="0" max="364" step="1" value="182">
+      <button type="button" class="arrow" data-step="night" data-by="1" aria-label="Next night">›</button>
+    </div>
+    <div class="row">
+      <label class="lbl" for="time"><span id="time-label">22:00</span><span class="state" id="sky-state"></span></label>
+      <button type="button" class="chip" id="play" aria-pressed="false">Play</button>
+    </div>
+    <div class="step">
+      <button type="button" class="arrow" data-step="minute" data-by="-1" aria-label="A minute earlier">‹</button>
+      <input type="range" id="time" min="0" max="1440" step="1" value="600">
+      <button type="button" class="arrow" data-step="minute" data-by="1" aria-label="A minute later">›</button>
+    </div>
+  </div>
+</footer>
+
+<script>
+(() => {
+const PLACE_KEY = 'milky-way-unrolled-place', STORE = 'milky-way-unrolled';
+// ---------- numbers, vectors and time ----------
+const D2R = Math.PI / 180, R2D = 180 / Math.PI, TAU = 2 * Math.PI, DAY = 864e5, SID = 1.00273790935;
+const mod = (a, n) => ((a % n) + n) % n;
+const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+const wrap180 = d => mod(d + 180, 360) - 180;
+const $ = id => document.getElementById(id);
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const vec = (lon, lat) => [Math.cos(lat) * Math.cos(lon), Math.cos(lat) * Math.sin(lon), Math.sin(lat)]; // radians
+const galVec = (l, b) => vec(l * D2R, b * D2R); // degrees
+const mul = (M, v) => [dot(M[0], v), dot(M[1], v), dot(M[2], v)];
+const mulT = (M, v) => [M[0][0] * v[0] + M[1][0] * v[1] + M[2][0] * v[2], M[0][1] * v[0] + M[1][1] * v[1] + M[2][1] * v[2], M[0][2] * v[0] + M[1][2] * v[1] + M[2][2] * v[2]];
+// a unit vector's longitude and latitude in degrees, longitude 0 to 360
+const lonLat = v => [mod(Math.atan2(v[1], v[0]) * R2D, 360), Math.asin(clamp(v[2], -1, 1)) * R2D];
+const jdOf = ms => ms / DAY + 2440587.5;
+const cent = jd => (jd - 2451545) / 36525;
+const lstHours = (jd, lon) => mod(18.697374558 + 24.06570982441908 * (jd - 2451545) + lon / 15, 24);
+
+// equatorial J2000 to galactic (the IAU 1958 frame, as tabulated for J2000)
+const GAL = [[-0.0548755604162154, -0.8734370902348850, -0.4838350155487132], [0.4941094278755837, -0.4448296299600112, 0.7469822444972189], [-0.8676661490190047, -0.1980763734312015, 0.4559837761750669]];
+// J2000 to the mean equator and equinox of date (IAU 1976 precession)
+function precMat(jd) {
+  const t = cent(jd), as = D2R / 3600;
+  const z1 = (2306.2181 * t + 0.30188 * t * t + 0.017998 * t ** 3) * as, z2 = (2306.2181 * t + 1.09468 * t * t + 0.018203 * t ** 3) * as, th = (2004.3109 * t - 0.42665 * t * t - 0.041833 * t ** 3) * as;
+  const cz = Math.cos(z1), sz = Math.sin(z1), cZ = Math.cos(z2), sZ = Math.sin(z2), ct = Math.cos(th), st = Math.sin(th);
+  return [[cz * ct * cZ - sz * sZ, -sz * ct * cZ - cz * sZ, -st * cZ], [cz * ct * sZ + sz * cZ, -sz * ct * sZ + cz * cZ, -st * sZ], [cz * st, -sz * st, ct]];
+}
+// a J2000 RA (hours) and Dec (degrees) as a galactic unit vector
+const eqGal = (raH, decD) => mul(GAL, vec(raH * 15 * D2R, decD * D2R));
+
+// ---------- the place and its clock ----------
+const DUBLIN = { name: 'Dublin', lat: 53.35, lon: -6.26, zone: 'Europe/Dublin' };
+let PLACE = DUBLIN, partsFmt = null, dayFmt = null;
+try {
+  const p = JSON.parse(localStorage.getItem(PLACE_KEY));
+  if (p && Number.isFinite(p.lat) && Number.isFinite(p.lon) && typeof p.name === 'string' && new Intl.DateTimeFormat('en-GB', { timeZone: p.zone })) PLACE = p;
+} catch {}
+function setPlace(p) {
+  PLACE = p;
+  partsFmt = new Intl.DateTimeFormat('en-GB', { timeZone: p.zone, year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', hourCycle: 'h23' });
+  dayFmt = new Intl.DateTimeFormat('en-GB', { timeZone: p.zone, weekday: 'short', day: 'numeric', month: 'short' });
+}
+setPlace(PLACE);
+function local(ms) { const p = {}; for (const x of partsFmt.formatToParts(new Date(ms))) p[x.type] = +x.value; p.hour %= 24; return p; }
+const offsetMs = ms => { const p = local(ms); return Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute) - Math.floor(ms / 6e4) * 6e4; };
+const noonOf = (y, m, d) => { const g = Date.UTC(y, m - 1, d, 12); return g - offsetMs(g); };
+const pad = n => String(n).padStart(2, '0');
+const hhmm = ms => { const p = local(ms + 3e4); return `${pad(p.hour)}:${pad(p.minute)}`; }; // to the nearest minute
+const dayName = ms => dayFmt.format(new Date(ms));
+// a "night" runs from noon to noon and is named by its evening
+function nightBase(ms) {
+  const p = local(ms);
+  let noon = noonOf(p.year, p.month, p.day);
+  if (ms < noon) { const q = local(noon - DAY); noon = noonOf(q.year, q.month, q.day); }
+  return noon;
+}
+
+// ---------- the observer, the Sun, the Moon and Sgr A* ----------
+// the zenith, north and east of the place as galactic unit vectors, and the Sun's altitude, at a moment (jd)
+function frame(jd) {
+  const L = lstHours(jd, PLACE.lon) * 15 * D2R, f = PLACE.lat * D2R, P = precMat(jd), toG = v => mul(GAL, mulT(P, v));
+  const cf = Math.cos(f), sf = Math.sin(f), cL = Math.cos(L), sL = Math.sin(L);
+  return { jd, P, toG, Z: toG([cf * cL, cf * sL, sf]), N: toG([-sf * cL, -sf * sL, cf]), E: toG([-sL, cL, 0]) };
+}
+// altitude and azimuth (degrees, azimuth from north through east) of a galactic direction
+const altAz = (g, F) => [Math.asin(clamp(dot(g, F.Z), -1, 1)) * R2D, mod(Math.atan2(dot(g, F.E), dot(g, F.N)) * R2D, 360)];
+// the direction at an altitude and azimuth (degrees), as a galactic unit vector
+const atAltAz = (alt, az, F) => { const a = alt * D2R, z = az * D2R, c = Math.cos(a); return [0, 1, 2].map(i => Math.sin(a) * F.Z[i] + c * (Math.cos(z) * F.N[i] + Math.sin(z) * F.E[i])); };
+// the Sun to 0.01° (Astronomical Almanac low-precision formulae): RA and Dec of date in radians, and its ecliptic longitude
+function sunPos(jd) {
+  const n = jd - 2451545, L = (280.460 + 0.9856474 * n) * D2R, g = (357.528 + 0.9856003 * n) * D2R;
+  const lam = L + (1.915 * Math.sin(g) + 0.020 * Math.sin(2 * g)) * D2R, e = (23.439 - 4e-7 * n) * D2R;
+  return { ra: mod(Math.atan2(Math.cos(e) * Math.sin(lam), Math.cos(lam)), TAU), dec: Math.asin(Math.sin(e) * Math.sin(lam)), lam };
+}
+// low-precision Moon from the Astronomical Almanac, good to about 0.3°: RA and Dec of date in radians, and how much is lit
+function moonPos(jd) {
+  const T = cent(jd), s = x => Math.sin(x * D2R), c = x => Math.cos(x * D2R);
+  const lam = 218.32 + 481267.881 * T + 6.29 * s(135.0 + 477198.87 * T) - 1.27 * s(259.3 - 413335.36 * T)
+    + 0.66 * s(235.7 + 890534.22 * T) + 0.21 * s(269.9 + 954397.74 * T) - 0.19 * s(357.5 + 35999.05 * T) - 0.11 * s(186.5 + 966404.03 * T);
+  const beta = 5.13 * s(93.3 + 483202.02 * T) + 0.28 * s(228.2 + 960400.89 * T) - 0.28 * s(318.3 + 6003.15 * T) - 0.17 * s(217.6 - 407332.21 * T);
+  const par = 0.9508 + 0.0518 * c(135.0 + 477198.87 * T) + 0.0095 * c(259.3 - 413335.36 * T) + 0.0078 * c(235.7 + 890534.22 * T) + 0.0028 * c(269.9 + 954397.74 * T);
+  const e = (23.439 - 0.013 * T) * D2R, l = lam * D2R, b = beta * D2R;
+  const x = Math.cos(b) * Math.cos(l), y = Math.cos(e) * Math.cos(b) * Math.sin(l) - Math.sin(e) * Math.sin(b), z = Math.sin(e) * Math.cos(b) * Math.sin(l) + Math.cos(e) * Math.sin(b);
+  const psi = Math.acos(clamp(Math.cos(b) * Math.cos(l - sunPos(jd).lam), -1, 1));
+  return { ra: mod(Math.atan2(y, x), TAU), dec: Math.asin(z), par, lit: (1 - Math.cos(psi)) / 2, waxing: mod(l - sunPos(jd).lam, TAU) < Math.PI };
+}
+const sunGal = F => { const s = sunPos(F.jd); return F.toG(vec(s.ra, s.dec)); };
+const moonGal = F => { const m = moonPos(F.jd); return { g: F.toG(vec(m.ra, m.dec)), ...m }; };
+const sunAltAt = jd => altAz(sunGal(frame(jd)), frame(jd))[0];
+const skyIndex = a => (a < -18 ? 0 : a < -12 ? 1 : a < -6 ? 2 : a < -0.833 ? 3 : 4);
+const SKY_PHRASE = ['Full darkness', 'Astronomical twilight', 'Nautical twilight', 'Civil twilight', 'Daylight'];
+const COMPASS = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
+const compass = az => COMPASS[Math.round(mod(az, 360) / 22.5) % 16];
+
+// Sgr A*, the black hole at the centre of the galaxy (J2000, Reid & Brunthaler 2004)
+const SGR = { ra: 266.41683708 * D2R, dec: -29.00781056 * D2R };
+SGR.g = mul(GAL, vec(SGR.ra, SGR.dec));
+// its rise, highest point and set: the first transit after a moment, with standard refraction (-0.5667°)
+function sgrPass(msFrom) {
+  const jd = jdOf(msFrom), [ra, dec] = (() => { const v = mul(precMat(jd), vec(SGR.ra, SGR.dec)); return [Math.atan2(v[1], v[0]), Math.asin(v[2])]; })();
+  const tr = jd + mod(ra * R2D / 15 - lstHours(jd, PLACE.lon), 24) / 24 / SID, f = PLACE.lat * D2R;
+  const peak = Math.asin(clamp(Math.sin(f) * Math.sin(dec) + Math.cos(f) * Math.cos(dec), -1, 1)) * R2D;
+  const c = (Math.sin(-0.5667 * D2R) - Math.sin(f) * Math.sin(dec)) / (Math.cos(f) * Math.cos(dec));
+  const ms = j => (j - 2440587.5) * DAY;
+  if (c >= 1) return { tr: ms(tr), peak, never: true };
+  if (c <= -1) return { tr: ms(tr), peak, always: true };
+  const h = Math.acos(c) * R2D / 15 / 24 / SID;
+  return { tr: ms(tr), peak, rise: ms(tr - h), set: ms(tr + h) };
+}
+
+// how high it looks: refraction lifts what is just under the horizon into view (the standard -0.5667°, as for rising)
+const upText = alt => alt > -0.5667 ? `${Math.max(0, alt).toFixed(0)}° up` : `${Math.max(1, -alt).toFixed(0)}° below the horizon`;
+
+// which constellation the galactic equator is passing through, by longitude (rounded boundaries)
+const ALONG = [[0, 'Sagittarius'], [14, 'Scutum'], [30, 'Aquila'], [52, 'Vulpecula'], [64, 'Cygnus'], [99, 'Cepheus'], [112, 'Cassiopeia'], [135, 'Perseus'], [160, 'Auriga'], [180, 'Gemini'], [195, 'Monoceros'], [232, 'Puppis'], [262, 'Vela'], [283, 'Carina'], [296, 'Crux'], [303, 'Centaurus'], [313, 'Norma'], [345, 'Scorpius'], [352, 'Sagittarius']];
+const along = l => { l = mod(l, 360); let n = ALONG[0][1]; for (const [a, s] of ALONG) if (l >= a) n = s; return n; };
+// the half of the galactic plane above the horizon: the longitude where it stands highest, how high, and the
+// galactic latitude of the zenith
+function arch(F) {
+  const top = mod(Math.atan2(F.Z[1], F.Z[0]) * R2D, 360), bz = Math.asin(clamp(F.Z[2], -1, 1)) * R2D;
+  return { top, height: 90 - Math.abs(bz), bz };
+}
+// the constellations the upper half of the band runs through, in order, skipping the small ones
+function archNames(F) {
+  const a = arch(F), names = [];
+  for (let d = 4; d < 180; d += 4) { const n = along(a.top - 90 + d); if (!/Vulpecula|Scutum|Norma|Crux/.test(n) && names[names.length - 1] !== n) names.push(n); }
+  return names;
+}
+const list = a => a.length < 2 ? a.join('') : `${a.slice(0, -1).join(', ')} and ${a[a.length - 1]}`;
+
+// ---------- the Messier catalogue: number, RA (h), Dec (°), type and common name, J2000 ----------
+const MESSIER = "1,5.575,22.02,SNR,Crab Nebula;2,21.558,-0.82,GC;3,13.703,28.38,GC;4,16.393,-26.53,GC;5,15.310,2.08,GC;6,17.668,-32.22,OC,Butterfly Cluster;7,17.898,-34.82,OC,Ptolemy Cluster;8,18.063,-24.38,Neb,Lagoon Nebula;9,17.320,-18.52,GC;10,16.952,-4.10,GC;11,18.852,-6.27,OC,Wild Duck Cluster;12,16.787,-1.95,GC;13,16.695,36.47,GC,Hercules Cluster;14,17.627,-3.25,GC;15,21.500,12.17,GC;16,18.313,-13.78,Neb,Eagle Nebula;17,18.347,-16.18,Neb,Omega Nebula;18,18.332,-17.13,OC;19,17.043,-26.27,GC;20,18.043,-23.03,Neb,Trifid Nebula;21,18.077,-22.50,OC;22,18.607,-23.90,GC;23,17.947,-19.02,OC;24,18.282,-18.48,Star cloud,Sagittarius Star Cloud;25,18.527,-19.25,OC;26,18.753,-9.40,OC;27,19.993,22.72,PN,Dumbbell Nebula;28,18.408,-24.87,GC;29,20.398,38.52,OC;30,21.673,-23.18,GC;31,0.712,41.27,Gal,Andromeda Galaxy;32,0.712,40.87,Gal;33,1.565,30.65,Gal,Triangulum Galaxy;34,2.700,42.78,OC;35,6.148,24.33,OC;36,5.602,34.13,OC;37,5.873,32.55,OC;38,5.473,35.83,OC;39,21.537,48.43,OC;40,12.373,58.08,Double star,Winnecke 4;41,6.767,-20.73,OC;42,5.590,-5.45,Neb,Orion Nebula;43,5.593,-5.27,Neb,De Mairan's Nebula;44,8.668,19.98,OC,Beehive Cluster;45,3.783,24.12,OC,Pleiades;46,7.697,-14.82,OC;47,7.610,-14.50,OC;48,8.230,-5.80,OC;49,12.497,8.00,Gal;50,7.053,-8.33,OC;51,13.498,47.20,Gal,Whirlpool Galaxy;52,23.403,61.58,OC;53,13.215,18.17,GC;54,18.918,-30.48,GC;55,19.667,-30.97,GC;56,19.277,30.18,GC;57,18.893,33.03,PN,Ring Nebula;58,12.628,11.82,Gal;59,12.700,11.65,Gal;60,12.728,11.55,Gal;61,12.365,4.47,Gal;62,17.020,-30.12,GC;63,13.263,42.03,Gal,Sunflower Galaxy;64,12.945,21.68,Gal,Black Eye Galaxy;65,11.315,13.08,Gal;66,11.337,12.98,Gal;67,8.855,11.82,OC;68,12.658,-26.75,GC;69,18.523,-32.35,GC;70,18.720,-32.30,GC;71,19.897,18.78,GC;72,20.892,-12.53,GC;73,20.983,-12.63,Asterism;74,1.612,15.78,Gal;75,20.102,-21.92,GC;76,1.707,51.57,PN,Little Dumbbell Nebula;77,2.712,-0.02,Gal;78,5.778,0.05,Neb;79,5.408,-24.55,GC;80,16.283,-22.98,GC;81,9.927,69.07,Gal,Bode's Galaxy;82,9.930,69.68,Gal,Cigar Galaxy;83,13.617,-29.87,Gal,Southern Pinwheel Galaxy;84,12.418,12.88,Gal;85,12.423,18.18,Gal;86,12.437,12.95,Gal;87,12.513,12.38,Gal,Virgo A;88,12.533,14.42,Gal;89,12.595,12.55,Gal;90,12.613,13.17,Gal;91,12.590,14.50,Gal;92,17.285,43.13,GC;93,7.743,-23.87,OC;94,12.848,41.12,Gal;95,10.733,11.70,Gal;96,10.780,11.82,Gal;97,11.247,55.02,PN,Owl Nebula;98,12.230,14.90,Gal;99,12.313,14.42,Gal;100,12.382,15.82,Gal;101,14.053,54.35,Gal,Pinwheel Galaxy;102,15.108,55.77,Gal,Spindle Galaxy;103,1.553,60.70,OC;104,12.667,-11.62,Gal,Sombrero Galaxy;105,10.797,12.58,Gal;106,12.317,47.30,Gal;107,16.542,-13.05,GC;108,11.192,55.67,Gal;109,11.960,53.38,Gal;110,0.673,41.68,Gal".split(';').map(s => {
+  const [n, ra, dec, type, name] = s.split(',');
+  return { n: +n, id: 'M' + n, ra: +ra, dec: +dec, type, name: name || '', g: eqGal(+ra, +dec) };
+});
+const TYPE_NAME = { GC: 'globular cluster', OC: 'open cluster', Neb: 'nebula', PN: 'planetary nebula', SNR: 'supernova remnant', Gal: 'galaxy', 'Star cloud': 'star cloud', Asterism: 'asterism', 'Double star': 'double star' };
+
+// ---------- canvas helpers ----------
+const FONT = (px, w = 400) => `${w} ${px}px "IBM Plex Mono", ui-monospace, Menlo, monospace`;
+const SANS = (px, w = 500) => `${w} ${px}px "IBM Plex Sans", system-ui, sans-serif`;
+const C = { bg: '#070d1a', ink: '#e3e9f2', soft: '#93a0b5', accent: '#5fd0dc', core: '#f2c27b', sun: '#ffe7a8', milk: '#cfdcff', line: 'rgba(147,160,181,0.26)' };
+function text(ctx, s, x, y, font, color, align = 'center', base = 'middle') {
+  ctx.font = font; ctx.fillStyle = color; ctx.textAlign = align; ctx.textBaseline = base; ctx.fillText(s, x, y);
+}
+// a label on a dark chip, as the calendars draw them over linework; returns its box
+function chip(ctx, s, x, y, font, color, align = 'left') {
+  ctx.font = font;
+  const m = ctx.measureText(s).width, x0 = align === 'left' ? x : align === 'right' ? x - m : x - m / 2;
+  ctx.fillStyle = 'rgba(7,13,26,0.84)'; ctx.fillRect(x0 - 4, y - 8, m + 8, 16);
+  text(ctx, s, x0, y + 0.5, font, color, 'left');
+  return { x: x0 - 4, y: y - 8, w: m + 8, h: 16 };
+}
+// text with a dark halo, for labels over the starfield
+function halo(ctx, s, x, y, font, color, align = 'center') {
+  ctx.font = font; ctx.textAlign = align; ctx.textBaseline = 'middle';
+  ctx.lineWidth = 3; ctx.lineJoin = 'round'; ctx.strokeStyle = 'rgba(7,13,26,0.85)'; ctx.strokeText(s, x, y);
+  ctx.fillStyle = color; ctx.fillText(s, x, y);
+}
+const fmtLy = ly => `${ly.toLocaleString('en')} ly`;
+
+// ---------- dialogs: the key and the location ----------
+// each opens centred over the picture, or where it was last dragged (remembered); a double-click on the title bar puts
+// it back in the middle. It is kept on screen, and its height capped to the room above the sliders.
+const DIALOGS = {};
+const roomH = () => window.innerHeight - $('hud-bottom').offsetHeight + 24;
+function makeDialog(id) {
+  const box = $(id), bar = box.querySelector('.panel-top'), store = `${STORE}-pos-${id}`;
+  const place = (x, y) => {
+    const r = box.getBoundingClientRect(), H = roomH();
+    const left = clamp(x, 0, Math.max(0, window.innerWidth - r.width)), top = clamp(y, 0, Math.max(0, H - Math.min(r.height, H - 12) - 12));
+    box.style.left = `${left}px`;
+    box.style.top = `${top}px`;
+    box.style.maxHeight = `${H - top - 12}px`;
+  };
+  const centre = () => { box.style.maxHeight = ''; const r = box.getBoundingClientRect(); place((window.innerWidth - r.width) / 2, (roomH() - r.height) / 2); };
+  let saved = null;
+  try { const p = JSON.parse(localStorage.getItem(store)); if (Array.isArray(p)) saved = p; } catch {}
+  DIALOGS[id] = { open: () => { box.style.maxHeight = ''; saved ? place(...saved) : centre(); } };
+  let drag = null;
+  bar.addEventListener('pointerdown', e => {
+    if (e.target.closest('button')) return;
+    const r = box.getBoundingClientRect();
+    drag = { dx: e.clientX - r.left, dy: e.clientY - r.top };
+    bar.setPointerCapture(e.pointerId);
+    bar.classList.add('dragging');
+  });
+  bar.addEventListener('pointermove', e => { if (drag) place(e.clientX - drag.dx, e.clientY - drag.dy); });
+  const drop = () => {
+    if (!drag) return;
+    drag = null;
+    bar.classList.remove('dragging');
+    saved = [parseFloat(box.style.left), parseFloat(box.style.top)];
+    try { localStorage.setItem(store, JSON.stringify(saved)); } catch {}
+  };
+  bar.addEventListener('pointerup', drop);
+  bar.addEventListener('pointercancel', drop);
+  bar.addEventListener('dblclick', () => { saved = null; try { localStorage.removeItem(store); } catch {} centre(); });
+  window.addEventListener('resize', () => { if (!box.hidden) saved ? place(...saved) : centre(); });
+}
+const PANELS = { key: 'keybtn', place: 'placebtn' };
+function showPanel(id) {
+  for (const [p, b] of Object.entries(PANELS)) { $(p).hidden = p !== id; $(b).setAttribute('aria-expanded', String(p === id)); }
+  if (id) DIALOGS[id].open();
+}
+makeDialog('key');
+makeDialog('place');
+$('keybtn').addEventListener('click', () => showPanel($('key').hidden ? 'key' : null));
+$('key-close').addEventListener('click', () => showPanel(null));
+$('placebtn').addEventListener('click', () => { showPanel($('place').hidden ? 'place' : null); if (!$('place').hidden) $('place-q').focus(); });
+$('place-close').addEventListener('click', () => showPanel(null));
+window.addEventListener('keydown', e => { if (e.key === 'Escape') { showPanel(null); hideTip(); } });
+
+// ---------- location: search (Open-Meteo geocoding, which also gives the time zone) or the device's own position ----------
+const fmtLatLon = (lat, lon) => `${Math.abs(lat).toFixed(2)}°${lat < 0 ? 'S' : 'N'} ${Math.abs(lon).toFixed(2)}°${lon < 0 ? 'W' : 'E'}`;
+function showPlace() {
+  $('placebtn').textContent = PLACE.name;
+  document.querySelectorAll('.place-name').forEach(el => { el.textContent = PLACE.name; });
+  $('place-now').textContent = `Now: ${PLACE.name} · ${fmtLatLon(PLACE.lat, PLACE.lon)} · ${PLACE.zone}`;
+}
+function applyPlace(p) {
+  const was = instant();
+  setPlace(p);
+  try { localStorage.setItem(PLACE_KEY, JSON.stringify(p)); } catch {}
+  showPlace();
+  // the same moment, now on the new place's clock
+  if (state.live) goLive(); else goTo(was);
+  $('place-results').replaceChildren();
+  $('place-msg').textContent = '';
+  showPanel(null);
+  placeChanged();
+}
+$('place-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const q = $('place-q').value.trim(), out = $('place-results'), msg = $('place-msg');
+  if (!q) return;
+  out.replaceChildren();
+  msg.textContent = 'Searching…';
+  try {
+    const r = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=6&language=en&format=json`);
+    if (!r.ok) throw new Error(r.status);
+    const found = ((await r.json()).results || []).filter(x => x.timezone);
+    msg.textContent = found.length ? '' : `No places found for “${q}”.`;
+    for (const x of found) {
+      const li = document.createElement('li'), b = document.createElement('button'), small = document.createElement('small');
+      b.type = 'button';
+      b.textContent = x.name;
+      small.textContent = `${[x.admin1, x.country].filter(Boolean).join(', ')} · ${fmtLatLon(x.latitude, x.longitude)}`;
+      b.append(small);
+      b.addEventListener('click', () => applyPlace({ name: x.name, lat: x.latitude, lon: x.longitude, zone: x.timezone }));
+      li.append(b);
+      out.append(li);
+    }
+  } catch {
+    msg.textContent = "Couldn't reach the place search. Check your connection and try again.";
+  }
+});
+$('place-here').addEventListener('click', () => {
+  const msg = $('place-msg');
+  if (!navigator.geolocation) { msg.textContent = "This browser can't share its location."; return; }
+  msg.textContent = 'Finding you…';
+  navigator.geolocation.getCurrentPosition(
+    ({ coords }) => applyPlace({ name: 'My location', lat: +coords.latitude.toFixed(3), lon: +coords.longitude.toFixed(3), zone: Intl.DateTimeFormat().resolvedOptions().timeZone }),
+    err => { msg.textContent = err.code === 1 ? 'Location access was turned down.' : "Couldn't find your location."; },
+    { timeout: 10000, maximumAge: 6e5 });
+});
+
+// ---------- the night and the time: the sky view's two sliders ----------
+const dateIn = $('date'), timeIn = $('time'), nowBtn = $('now'), playBtn = $('play');
+const state = { base: 0, k: 0, noon: 0, nightMin: 1440, minutes: 0, live: true, playing: false };
+const instant = () => state.noon + state.minutes * 6e4;
+// the date slider runs half a year either side of its anchor night (tonight when the page opens)
+const HALF = 182;
+function nightNoon(k) { const p = local(state.base + (k - HALF) * DAY + 3 * 3600e3); return noonOf(p.year, p.month, p.day); }
+function nightName(noon) {
+  const ev = local(noon), t = local(Date.now());
+  const diff = Math.round((Date.UTC(ev.year, ev.month - 1, ev.day) - Date.UTC(t.year, t.month - 1, t.day)) / DAY);
+  return diff === 0 ? 'Tonight' : diff === -1 ? 'Last night' : diff === 1 ? 'Tomorrow night' : `Night of ${dayName(noon)}`;
+}
+function setNight(k) {
+  state.k = k;
+  state.noon = nightNoon(k);
+  state.nightMin = Math.round((nightNoon(k + 1) - state.noon) / 6e4);
+  timeIn.max = String(state.nightMin);
+  state.minutes = clamp(state.minutes, 0, state.nightMin);
+  dateIn.value = String(k);
+  paintTrack();
+}
+function goTo(ms) {
+  state.live = false;
+  state.base = nightBase(ms);
+  setNight(HALF);
+  state.minutes = clamp(Math.round((ms - state.noon) / 6e4), 0, state.nightMin);
+  timeIn.value = String(state.minutes);
+  timeChanged();
+}
+function goLive() {
+  const now = Date.now(), base = nightBase(now);
+  state.live = true;
+  if (base !== state.base || state.k !== HALF) { state.base = base; setNight(HALF); }
+  state.minutes = clamp(Math.round((now - state.noon) / 6e4), 0, state.nightMin);
+  timeIn.value = String(state.minutes);
+  timeChanged();
+}
+// the time slider's track is one row of the calendars: the night's twilight bands
+const TRACK = ['#18243c', '#2b3a57', '#495978', '#78869f', '#c4ccd8'];
+function paintTrack() {
+  const n = 144, stops = [];
+  let prev = -1, start = 0;
+  const at = f => `calc(12px + ${(f * 100).toFixed(2)}% - ${(f * 24).toFixed(2)}px)`;
+  for (let i = 0; i <= n; i++) {
+    const b = i < n ? skyIndex(sunAltAt(jdOf(state.noon + (i + 0.5) / n * state.nightMin * 6e4))) : -1;
+    if (b === prev) continue;
+    if (prev >= 0) stops.push(`${TRACK[prev]} ${at(start)} ${at(i / n)}`);
+    prev = b;
+    start = i / n;
+  }
+  timeIn.style.setProperty('--track', `linear-gradient(90deg, ${stops.join(', ')})`);
+}
+function stepNight(n) {
+  state.live = false;
+  if (state.k + n < 0 || state.k + n > 2 * HALF) { state.base = state.noon; state.k = HALF; }
+  setNight(state.k + n);
+}
+function stepMinute(n) {
+  state.live = false;
+  let m = state.minutes + n;
+  if (m < 0) { stepNight(-1); m += state.nightMin; }
+  else if (m > state.nightMin) { m -= state.nightMin; stepNight(1); }
+  state.minutes = m;
+  timeIn.value = String(Math.round(m));
+}
+function timeChanged() {
+  const ms = instant();
+  $('time-label').textContent = hhmm(ms);
+  $('sky-state').textContent = SKY_PHRASE[skyIndex(sunAltAt(jdOf(ms)))];
+  $('date-label').textContent = nightName(state.noon);
+  nowBtn.hidden = state.live;
+  invalidate();
+}
+dateIn.addEventListener('input', () => { state.live = false; setNight(+dateIn.value); timeChanged(); });
+timeIn.addEventListener('input', () => { state.live = false; state.minutes = +timeIn.value; timeChanged(); });
+nowBtn.addEventListener('click', () => { setPlaying(false); goLive(); });
+// the arrows: a night at a time on the date, a minute at a time on the clock, running on through midnight and noon
+// and past the ends of the date slider (which re-centres on the night reached); press and hold to keep going
+for (const b of document.querySelectorAll('.arrow')) {
+  const by = +b.dataset.by, night = b.dataset.step === 'night';
+  let timer = 0, n = 0;
+  const go = () => { night ? stepNight(by) : stepMinute(by * (n > 20 ? 5 : 1)); n++; timeChanged(); };
+  const stop = () => { clearTimeout(timer); timer = 0; n = 0; };
+  b.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    b.setPointerCapture(e.pointerId);
+    go();
+    const again = () => { go(); timer = setTimeout(again, night ? 110 : 70); };
+    timer = setTimeout(again, 400);
+  });
+  for (const t of ['pointerup', 'pointercancel', 'lostpointercapture']) b.addEventListener(t, stop);
+  b.addEventListener('click', e => { if (e.detail === 0) go(); }); // keyboard
+  b.addEventListener('contextmenu', e => e.preventDefault());
+}
+// Play runs the clock on at an hour a second, through the night and into the next
+let playRaf = 0, playLast = 0;
+function setPlaying(on) {
+  state.playing = on;
+  playBtn.setAttribute('aria-pressed', String(on));
+  playBtn.textContent = on ? 'Pause' : 'Play';
+  cancelAnimationFrame(playRaf);
+  if (on) { playLast = 0; playRaf = requestAnimationFrame(playStep); }
+}
+function playStep(now) {
+  if (!state.playing) return;
+  const dt = playLast ? Math.min(0.1, (now - playLast) / 1000) : 0;
+  playLast = now;
+  stepMinute(dt * 60);
+  timeChanged();
+  playRaf = requestAnimationFrame(playStep);
+}
+playBtn.addEventListener('click', () => setPlaying(!state.playing));
+setInterval(() => { if (state.live) goLive(); }, 15000);
+
+// the reading at the top folds to one line with a tap (folded at first on a phone); remembered
+{
+  const cap = $('caption'), store = `${STORE}-caption-folded`;
+  let folded = window.innerWidth < 600;
+  try { const v = localStorage.getItem(store); if (v !== null) folded = v === '1'; } catch {}
+  const sync = () => { cap.classList.toggle('folded', folded); cap.title = folded ? 'Tap to read it all' : 'Tap to fold to one line'; };
+  cap.addEventListener('click', () => { folded = !folded; try { localStorage.setItem(store, folded ? '1' : '0'); } catch {} sync(); });
+  sync();
+}
+
+// the address can give a place (lat, lon, zone, name) and a moment (t: milliseconds, or a date and UTC time), used as
+// given and not remembered; otherwise the page opens on the last place picked (Dublin at first), now
+function startFromAddress() {
+  const Q = new URLSearchParams(location.search), lat = +Q.get('lat'), lon = +Q.get('lon');
+  if (Q.has('lat') && Q.has('lon') && Number.isFinite(lat) && Number.isFinite(lon) && Math.abs(lat) <= 90) {
+    let zone = Q.get('zone') || Intl.DateTimeFormat().resolvedOptions().timeZone;
+    try { new Intl.DateTimeFormat('en-GB', { timeZone: zone }); } catch { zone = Intl.DateTimeFormat().resolvedOptions().timeZone; }
+    setPlace({ name: Q.get('name') || fmtLatLon(lat, lon), lat, lon: mod(lon + 180, 360) - 180, zone });
+  }
+  showPlace();
+  const t = Q.has('t') ? (Number.isFinite(+Q.get('t')) ? +Q.get('t') : Date.parse(Q.get('t'))) : NaN;
+  if (t > 0) goTo(t); else goLive();
+}
+
+// ---------- a floating readout for whatever is under the pointer (or was last tapped) ----------
+// It is worked out afresh whenever the picture is redrawn, so it follows the clock and the view.
+const tip = $('tip');
+let tipAt0 = null, tipText = '';
+function showTip(lines, x, y) {
+  tipAt0 = { x, y };
+  const t = lines.join('\n');
+  if (t !== tipText || tip.hidden) {
+    tipText = t;
+    tip.replaceChildren(...lines.map((s, i) => { const el = document.createElement(i ? 'span' : 'b'); el.textContent = s; return el; }));
+  }
+  tip.hidden = false;
+  const r = tip.getBoundingClientRect(), W = window.innerWidth;
+  let left = x + 14, top = y + 14;
+  if (left + r.width > W - 8) left = x - 14 - r.width;
+  if (top + r.height > roomH() - 8) top = y - 14 - r.height;
+  tip.style.left = `${clamp(left, 8, W - r.width - 8)}px`;
+  tip.style.top = `${Math.max(8, top)}px`;
+}
+function hideTip() { tip.hidden = true; tipAt0 = null; }
+function refreshTip() { if (tipAt0 && !tip.hidden) { const t = pick(tipAt0.x, tipAt0.y); t ? showTip(t, tipAt0.x, tipAt0.y) : hideTip(); } }
+
+// ---------- the Milky Way as a picture in galactic longitude and latitude: drawn from a model, a stand-in for a survey ----------
+function hash(i, j, s) { let h = (i * 374761393 + j * 668265263 + s * 1442695041) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; }
+function vnoise(x, y, period, s) {
+  const i = Math.floor(x), j = Math.floor(y), fx = x - i, fy = y - j, u = fx * fx * (3 - 2 * fx), v = fy * fy * (3 - 2 * fy);
+  const a = hash(mod(i, period), j, s), b = hash(mod(i + 1, period), j, s), c = hash(mod(i, period), j + 1, s), d = hash(mod(i + 1, period), j + 1, s);
+  return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+}
+function fbm(L, b, s0 = 0) { // L in [0, 360): every cell size divides 360, so the noise wraps round the sky
+  let t = 0, amp = 0.5, sum = 0;
+  for (const [cell, s] of [[8, 1], [3, 2], [1.2, 3], [0.5, 4]]) { t += amp * vnoise(L / cell, b / cell, Math.round(360 / cell), s + s0); sum += amp; amp *= 0.55; }
+  return t / sum;
+}
+const gss = (x, s) => Math.exp(-x * x / (2 * s * s));
+const win = (x, a, b, s) => 1 / (1 + Math.exp(-(x - a) / s)) / (1 + Math.exp((x - b) / s));
+// brightness at longitude l (-180 to 180) and latitude b, in degrees
+function mwI(l, b) {
+  const L = mod(l, 360), n = fbm(L, b), n2 = fbm(L, b * 1.6, 9);
+  const A = 0.2 + 0.6 * gss(l, 34) + 0.3 * gss(l - 78, 15) + 0.2 * gss(l + 72, 20) + 0.14 * gss(l - 27, 7) + 0.1 * gss(l - 135, 25);
+  const w = 2.4 + 3.6 * gss(l, 24) + 1.3 * gss(l - 75, 18);
+  let I = A * (gss(b + 0.4, w) + 0.32 * gss(b, w * 2.7));
+  I += 0.6 * Math.exp(-1.5 * Math.hypot(l / 10, b / 7.5)); // the bulge
+  I += 0.4 * gss(Math.hypot((l - 1.5) / 1.4, (b + 4.6) / 1.0), 3.2) // the Large Sagittarius Star Cloud
+    + 0.24 * gss(Math.hypot((l - 12) / 1.2, b + 0.9), 1.4) // M24
+    + 0.18 * gss(Math.hypot((l - 27.5) / 1.3, b + 2.6), 1.6); // the Scutum cloud
+  I *= 0.42 + 1.15 * n;
+  // dust: the central lane, the Great Rift from Aquila to Cygnus, the Ophiuchus clouds and the Coalsack
+  const D = 0.9 * gss(b - 0.7, 1.1 + 0.7 * n2) * win(l, -60, 40, 8)
+    + 0.8 * gss(b - 1.6 - 0.045 * (70 - l), 1.7 + 0.5 * n2) * win(l, -4, 86, 3)
+    + 0.6 * gss(Math.hypot((l - 3) / 1.7, (b - 10) / 1.3), 4.5)
+    + 0.75 * gss(Math.hypot(l + 59, b + 0.8), 2.2);
+  return I * Math.max(0, 1 - D * (0.55 + 0.65 * n2));
+}
+// the picture: a quarter of a degree a pixel, b from +50° (top) to -50°, l from +180° (left) to -180°
+const TEX = { W: 1440, H: 400, B: 50, cv: null };
+function texture() {
+  if (TEX.cv) return TEX.cv;
+  const { W, H, B } = TEX, cv = document.createElement('canvas');
+  cv.width = W; cv.height = H;
+  const c = cv.getContext('2d'), img = c.createImageData(W, H), px = img.data;
+  for (let y = 0; y < H; y++) {
+    const b = B - (y + 0.5) / H * 2 * B;
+    for (let x = 0; x < W; x++) {
+      const l = 180 - (x + 0.5) / W * 360, v = 1 - Math.exp(-1.75 * mwI(l, b)), warm = clamp(1.3 * Math.exp(-Math.hypot(l / 15, b / 10)), 0, 1), k = (y * W + x) * 4;
+      px[k] = 200 + 55 * warm; px[k + 1] = 214 + 8 * warm; px[k + 2] = 255 - 75 * warm; px[k + 3] = 255 * Math.min(1, v * 1.08);
+    }
+  }
+  c.putImageData(img, 0, 0);
+  return (TEX.cv = cv);
+}
+// faint field stars over the whole sky, thicker toward the plane
+const FIELD = (() => {
+  let s = 7; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647, out = [];
+  for (let i = 0; i < 9000; i++) {
+    const l = rnd() * 360, b = Math.asin(2 * rnd() - 1) * R2D, m = rnd();
+    if (rnd() > 0.16 + 0.84 * Math.exp(-b * b / 300)) continue;
+    out.push([l, b, 0.18 + 0.55 * m * m, m > 0.96 ? 1.5 : 1]);
+  }
+  return out;
+})();
+
+// ---------- bright stars and a few stick figures, to get your bearings by (J2000 RA in hours, Dec, magnitude) ----------
+const STARS = [
+  ['Sirius', 6.7525, -16.716, -1.46], ['Canopus', 6.3992, -52.696, -0.74], ['Rigil Kentaurus', 14.6600, -60.834, -0.27], ['Arcturus', 14.2610, 19.183, -0.05],
+  ['Vega', 18.6156, 38.784, 0.03], ['Capella', 5.2782, 45.998, 0.08], ['Rigel', 5.2423, -8.202, 0.13], ['Procyon', 7.6550, 5.225, 0.34],
+  ['Achernar', 1.6286, -57.237, 0.46], ['Betelgeuse', 5.9195, 7.407, 0.50], ['Hadar', 14.0637, -60.373, 0.61], ['Altair', 19.8464, 8.868, 0.76],
+  ['Acrux', 12.4433, -63.099, 0.76], ['Aldebaran', 4.5987, 16.509, 0.86], ['Antares', 16.4901, -26.432, 0.96], ['Spica', 13.4199, -11.161, 0.97],
+  ['Pollux', 7.7553, 28.026, 1.14], ['Fomalhaut', 22.9608, -29.622, 1.16], ['Deneb', 20.6905, 45.280, 1.25], ['Mimosa', 12.7954, -59.689, 1.25],
+  ['Regulus', 10.1395, 11.967, 1.35], ['Adhara', 6.9771, -28.972, 1.50], ['Castor', 7.5767, 31.888, 1.58], ['Shaula', 17.5601, -37.104, 1.62],
+  ['Gacrux', 12.5194, -57.113, 1.63], ['Bellatrix', 5.4189, 6.350, 1.64], ['Elnath', 5.4382, 28.608, 1.65], ['Miaplacidus', 9.2200, -69.717, 1.67],
+  ['Alnilam', 5.6036, -1.202, 1.69], ['Alnair', 22.1372, -46.961, 1.74], ['Alnitak', 5.6793, -1.943, 1.77], ['Alioth', 12.9005, 55.960, 1.77],
+  ['Dubhe', 11.0621, 61.751, 1.79], ['Mirfak', 3.4054, 49.861, 1.79], ['Wezen', 7.1399, -26.393, 1.83], ['Regor', 8.1589, -47.337, 1.83],
+  ['Kaus Australis', 18.4029, -34.385, 1.85], ['Avior', 8.3752, -59.510, 1.86], ['Sargas', 17.6220, -42.998, 1.86], ['Alkaid', 13.7923, 49.313, 1.86],
+  ['Menkalinan', 5.9922, 44.948, 1.90], ['Atria', 16.8111, -69.028, 1.91], ['Alhena', 6.6285, 16.399, 1.93], ['Peacock', 20.4275, -56.735, 1.94],
+  ['δ Vel', 8.7450, -54.709, 1.96], ['Polaris', 2.5303, 89.264, 1.98], ['Mirzam', 6.3783, -17.956, 1.98], ['Alphard', 9.4598, -8.659, 1.98],
+  ['Hamal', 2.1196, 23.462, 2.00], ['Algieba', 10.3329, 19.841, 2.01], ['Nunki', 18.9211, -26.297, 2.05], ['Menkent', 14.1114, -36.370, 2.06],
+  ['Mirach', 1.1622, 35.621, 2.05], ['Saiph', 5.7959, -9.670, 2.06], ['Alpheratz', 0.1398, 29.091, 2.06], ['Kochab', 14.8451, 74.156, 2.07],
+  ['Rasalhague', 17.5823, 12.560, 2.08], ['Algol', 3.1361, 40.956, 2.10], ['Almach', 2.0650, 42.330, 2.10], ['Denebola', 11.8177, 14.572, 2.14],
+  ['Suhail', 9.1333, -43.433, 2.21], ['Naos', 8.0598, -40.003, 2.21], ['Mizar', 13.3988, 54.925, 2.23], ['Mintaka', 5.5334, -0.299, 2.23],
+  ['Sadr', 20.3705, 40.257, 2.23], ['Schedar', 0.6751, 56.537, 2.24], ['Caph', 0.1530, 59.150, 2.27], ['Dschubba', 16.0056, -22.622, 2.29],
+  ['ε Sco', 16.8361, -34.293, 2.29], ['ε Cen', 13.6648, -53.466, 2.30], ['Merak', 11.0307, 56.383, 2.37], ['κ Sco', 17.7081, -39.030, 2.39],
+  ['Enif', 21.7365, 9.875, 2.39], ['Scheat', 23.0629, 28.083, 2.42], ['Phecda', 11.8972, 53.695, 2.44], ['Aludra', 7.4016, -29.303, 2.45],
+  ['Navi', 0.9451, 60.717, 2.47], ['κ Vel', 9.3680, -55.011, 2.47], ['Gienah', 20.7702, 33.970, 2.48], ['Markab', 23.0794, 15.205, 2.49],
+  ['Acrab', 16.0906, -19.806, 2.56], ['Zosma', 11.2351, 20.524, 2.56], ['Ascella', 19.0435, -29.880, 2.60], ['θ Aur', 5.9954, 37.213, 2.62],
+  ['Ruchbah', 1.4303, 60.235, 2.68], ['ι Aur', 4.9499, 33.166, 2.69], ['Kaus Media', 18.3499, -29.828, 2.70], ['δ Cru', 12.2524, -58.749, 2.79],
+  ['Kaus Borealis', 18.4662, -25.422, 2.81], ['τ Sco', 16.5980, -28.216, 2.82], ['ζ Her', 16.6881, 31.603, 2.81], ['δ Cyg', 19.7496, 45.131, 2.87],
+  ['σ Sco', 16.3531, -25.593, 2.89], ['Alnasl', 18.0968, -30.424, 2.98], ['μ¹ Sco', 16.8645, -38.047, 3.00], ['ι¹ Sco', 17.7930, -40.127, 3.00],
+  ['ζ Tau', 5.6274, 21.143, 3.00], ['Albireo', 19.5120, 27.960, 3.05], ['π Her', 17.2508, 36.809, 3.16], ['φ Sgr', 18.7609, -26.991, 3.17],
+  ['Sulafat', 18.9824, 32.690, 3.25], ['δ And', 0.6555, 30.861, 3.27], ['Megrez', 12.2571, 57.033, 3.31], ['τ Sgr', 19.1157, -27.670, 3.32],
+  ['Chertan', 11.2373, 15.430, 3.33], ['Segin', 1.9066, 63.670, 3.37], ['η Her', 16.7149, 38.922, 3.48], ['η Leo', 10.1222, 16.763, 3.49],
+  ['Sheliak', 18.8347, 33.363, 3.52], ['μ And', 0.9458, 38.499, 3.87], ['ε Her', 17.0048, 30.926, 3.92], ['ζ Lyr', 18.7462, 37.605, 4.3],
+  ['δ Lyr', 18.9084, 36.899, 4.3], ['ν And', 0.8302, 41.079, 4.5],
+].map(([name, ra, dec, mag]) => { const g = eqGal(ra, dec), [l, b] = lonLat(g); return { name, mag, g, l, b }; });
+const STAR = Object.fromEntries(STARS.map(s => [s.name, s]));
+const FIGURES = [
+  ['Dubhe', 'Merak'], ['Merak', 'Phecda'], ['Phecda', 'Megrez'], ['Megrez', 'Dubhe'], ['Megrez', 'Alioth'], ['Alioth', 'Mizar'], ['Mizar', 'Alkaid'],
+  ['Caph', 'Schedar'], ['Schedar', 'Navi'], ['Navi', 'Ruchbah'], ['Ruchbah', 'Segin'],
+  ['Betelgeuse', 'Bellatrix'], ['Betelgeuse', 'Alnitak'], ['Bellatrix', 'Mintaka'], ['Mintaka', 'Alnilam'], ['Alnilam', 'Alnitak'], ['Alnitak', 'Saiph'], ['Mintaka', 'Rigel'],
+  ['Deneb', 'Sadr'], ['Sadr', 'Albireo'], ['δ Cyg', 'Sadr'], ['Sadr', 'Gienah'],
+  ['Vega', 'ζ Lyr'], ['ζ Lyr', 'δ Lyr'], ['δ Lyr', 'Sulafat'], ['Sulafat', 'Sheliak'], ['Sheliak', 'ζ Lyr'],
+  ['Markab', 'Scheat'], ['Scheat', 'Alpheratz'], ['Alpheratz', 'Algenib'], ['Algenib', 'Markab'],
+  ['Alpheratz', 'δ And'], ['δ And', 'Mirach'], ['Mirach', 'Almach'], ['Mirach', 'μ And'], ['μ And', 'ν And'],
+  ['ζ Her', 'η Her'], ['η Her', 'π Her'], ['π Her', 'ε Her'], ['ε Her', 'ζ Her'],
+  ['Regulus', 'η Leo'], ['η Leo', 'Algieba'], ['Algieba', 'Zosma'], ['Zosma', 'Denebola'], ['Denebola', 'Chertan'], ['Chertan', 'Regulus'], ['Zosma', 'Chertan'],
+  ['Castor', 'Pollux'],
+  ['Capella', 'Menkalinan'], ['Menkalinan', 'θ Aur'], ['θ Aur', 'Elnath'], ['Elnath', 'ι Aur'], ['ι Aur', 'Capella'], ['Aldebaran', 'Elnath'], ['Aldebaran', 'ζ Tau'],
+  ['Sirius', 'Mirzam'], ['Sirius', 'Adhara'], ['Adhara', 'Wezen'], ['Wezen', 'Aludra'],
+  ['Acrux', 'Gacrux'], ['Mimosa', 'δ Cru'], ['Rigil Kentaurus', 'Hadar'],
+  ['Acrab', 'Dschubba'], ['Dschubba', 'σ Sco'], ['σ Sco', 'Antares'], ['Antares', 'τ Sco'], ['τ Sco', 'ε Sco'], ['ε Sco', 'μ¹ Sco'], ['μ¹ Sco', 'Sargas'], ['Sargas', 'ι¹ Sco'], ['ι¹ Sco', 'κ Sco'], ['κ Sco', 'Shaula'],
+  ['Kaus Borealis', 'Kaus Media'], ['Kaus Media', 'Kaus Australis'], ['Kaus Australis', 'Ascella'], ['Ascella', 'φ Sgr'], ['φ Sgr', 'Kaus Media'], ['φ Sgr', 'Kaus Borealis'],
+  ['φ Sgr', 'Nunki'], ['Nunki', 'τ Sgr'], ['τ Sgr', 'Ascella'], ['Alnasl', 'Kaus Media'], ['Alnasl', 'Kaus Australis'],
+].filter(([a, b]) => STAR[a] && STAR[b]);
+// constellation names along the band, at their galactic longitudes
+const BAND_LABELS = [[7, 'SAGITTARIUS'], [42, 'AQUILA'], [80, 'CYGNUS'], [118, 'CASSIOPEIA'], [146, 'PERSEUS'], [170, 'AURIGA'], [203, 'ORION'], [242, 'PUPPIS'], [266, 'VELA'], [288, 'CARINA'], [313, 'CENTAURUS'], [348, 'SCORPIUS']];
+const MSHOW = new Set([1, 8, 11, 13, 16, 17, 20, 22, 27, 31, 33, 42, 44, 45, 51, 57, 81, 87, 101, 104]);
+
+// ---------- the view: longitude across (the centre of the galaxy in the middle, longitude increasing to the left), latitude up ----------
+const cv = $('view'), ctx = cv.getContext('2d');
+const view = { lc: 0, bc: 0, k: 0 };
+let W = 0, H = 0, dpr = 1, mapTop = 0, mapBot = 0, kFit = 1, dirty = true;
+const yMid = () => (mapTop + mapBot) / 2;
+const X = l => W / 2 - wrap180(l - view.lc) * view.k;
+const Y = b => yMid() - (b - view.bc) * view.k;
+const lOf = x => mod(view.lc + (W / 2 - x) / view.k, 360);
+const bOf = y => view.bc + (yMid() - y) / view.k;
+function clampView() {
+  view.k = clamp(view.k, kFit, Math.max(kFit * 8, 30));
+  const half = (mapBot - mapTop) / 2 / view.k;
+  view.bc = half >= 90 ? 0 : clamp(view.bc, -90 + half, 90 - half);
+  view.lc = mod(view.lc, 360);
+}
+function layout() {
+  W = window.innerWidth; H = window.innerHeight; dpr = Math.min(window.devicePixelRatio || 1, 2);
+  cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+  mapTop = $('hud-top').querySelector('.bar').getBoundingClientRect().bottom + 6;
+  mapBot = H - $('hud-bottom').offsetHeight + 22;
+  const fitted = view.k && Math.abs(view.k - kFit) < 1e-6;
+  kFit = Math.max(W / 360, (mapBot - mapTop) / 180);
+  if (!view.k || fitted) view.k = kFit;
+  $('zoom').style.bottom = `${H - mapBot + 30}px`;
+  clampView();
+  invalidate();
+}
+function zoomAt(x, y, k) {
+  const l = lOf(x), b = bOf(y);
+  view.k = clamp(k, kFit, Math.max(kFit * 8, 30));
+  view.lc = l - (W / 2 - x) / view.k;
+  view.bc = b - (yMid() - y) / view.k;
+  clampView();
+  invalidate();
+}
+function invalidate() { dirty = true; }
+function placeChanged() { MASK.key = ''; invalidate(); }
+
+// ---------- the part of the sky that never rises from here, as a mask on the picture's grid (half a degree a cell) ----------
+const MASK = { cv: null, key: '' };
+function neverMask(jd) {
+  const key = `${PLACE.lat}|${Math.round((jd - 2451545) / 365)}`;
+  if (MASK.key === key) return MASK.cv;
+  const w = 720, h = 360, m = MASK.cv || document.createElement('canvas');
+  m.width = w; m.height = h;
+  const c = m.getContext('2d'), img = c.createImageData(w, h), px = img.data;
+  const ncp = mul(GAL, mulT(precMat(jd), [0, 0, 1])), lim = Math.cos(PLACE.lat * D2R), north = PLACE.lat >= 0;
+  for (let y = 0; y < h; y++) {
+    const b = (90 - (y + 0.5) / h * 180) * D2R, cb = Math.cos(b), sb = Math.sin(b);
+    for (let x = 0; x < w; x++) {
+      const l = (180 - (x + 0.5) / w * 360) * D2R, s = ncp[0] * cb * Math.cos(l) + ncp[1] * cb * Math.sin(l) + ncp[2] * sb; // sine of the declination
+      if (north ? s < -lim : s > lim) px[(y * w + x) * 4 + 3] = 255;
+    }
+  }
+  c.putImageData(img, 0, 0);
+  MASK.cv = m; MASK.key = key;
+  return m;
+}
+const neverRises = (g, F) => { const s = dot(g, F.toG([0, 0, 1])), lim = Math.cos(PLACE.lat * D2R); return PLACE.lat >= 0 ? s < -lim : s > lim; };
+const hatchCv = document.createElement('canvas'), hatchPat = document.createElement('canvas');
+// diagonal lines over a dark tint, the size of the screen, drawn once for each size
+function hatchPattern() {
+  if (hatchPat.width === cv.width && hatchPat.height === cv.height) return hatchPat;
+  hatchPat.width = cv.width; hatchPat.height = cv.height;
+  const c = hatchPat.getContext('2d'), w = hatchPat.width, h = hatchPat.height;
+  c.fillStyle = 'rgba(7,13,26,0.45)'; c.fillRect(0, 0, w, h);
+  c.strokeStyle = 'rgba(160,172,196,0.5)'; c.lineWidth = dpr;
+  c.beginPath(); for (let d = -h; d < w; d += 7 * dpr) { c.moveTo(d, h); c.lineTo(d + h, 0); } c.stroke();
+  return hatchPat;
+}
+
+// ---------- drawing ----------
+// a curve given as galactic directions, broken where it wraps round the edge of the map
+function strokeRun(pts) {
+  ctx.beginPath();
+  let px = null;
+  for (const g of pts) {
+    if (!g) { px = null; continue; }
+    const [l, b] = lonLat(g), x = X(l), y = Y(b);
+    if (px === null || Math.abs(x - px) > W / 2) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    px = x;
+  }
+  ctx.stroke();
+}
+// the horizon as a wave: for each longitude, the latitude where the horizon crosses it
+const horizonB = (l, Z) => { const A = Z[0] * Math.cos(l * D2R) + Z[1] * Math.sin(l * D2R); return Math.atan2(-A * Math.sign(Z[2] || 1e-12), Math.abs(Z[2])) * R2D; };
+function horizonPath(Z, toEdge) {
+  ctx.beginPath();
+  for (let x = -4; x <= W + 4; x += 2) { const y = Y(horizonB(lOf(x), Z)); x < 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y); }
+  if (toEdge !== undefined) { ctx.lineTo(W + 4, toEdge); ctx.lineTo(-4, toEdge); ctx.closePath(); }
+}
+const SKY = [[11, 20, 38], [30, 42, 64], [59, 71, 96], [119, 129, 154], [174, 183, 199]];
+let caption = '', boxes = [];
+const free = (x, y, w, h) => { if (boxes.some(r => x < r.x + r.w && x + w > r.x && y < r.y + r.h && y + h > r.y)) return false; boxes.push({ x, y, w, h }); return true; };
+
+function draw() {
+  const ms = instant(), jd = jdOf(ms), F = frame(jd), Z = F.Z, k = view.k;
+  const sunG = sunGal(F), sAlt = altAz(sunG, F)[0], moon = moonGal(F);
+  boxes = [];
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+  const yN = Y(90), yS = Y(-90);
+  ctx.fillStyle = 'rgb(11,20,38)'; ctx.fillRect(0, yN, W, yS - yN);
+  // the Milky Way, three copies so it wraps
+  const tex = texture(), Wf = 360 * k, x0 = W / 2 - (180 - wrap180(view.lc)) * k;
+  ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+  for (let n = -1; n <= 1; n++) ctx.drawImage(tex, x0 + n * Wf, Y(TEX.B), Wf, 2 * TEX.B * k);
+  // field stars
+  const ds = Math.min(1.6, 0.6 + k / 10);
+  for (const [l, b, a, r] of FIELD) {
+    const x = X(l), y = Y(b);
+    if (x < -2 || x > W + 2 || y < -2 || y > H + 2) continue;
+    ctx.fillStyle = `rgba(236,241,255,${a.toFixed(2)})`; ctx.fillRect(x, y, r * ds, r * ds);
+  }
+  // a faint grid: latitude every 30°, longitude ticks along the bottom
+  ctx.strokeStyle = 'rgba(147,160,181,0.16)'; ctx.lineWidth = 1; ctx.setLineDash([1, 5]);
+  for (const b of [-60, -30, 30, 60]) { ctx.beginPath(); ctx.moveTo(0, Y(b)); ctx.lineTo(W, Y(b)); ctx.stroke(); }
+  ctx.setLineDash([]);
+  // stick figures and bright stars
+  ctx.strokeStyle = 'rgba(190,204,228,0.22)'; ctx.lineWidth = 1;
+  for (const [a, b] of FIGURES) {
+    const p = STAR[a], q = STAR[b], xa = X(p.l), xb = X(q.l);
+    if (Math.abs(xa - xb) > W / 2) continue;
+    ctx.beginPath(); ctx.moveTo(xa, Y(p.b)); ctx.lineTo(xb, Y(q.b)); ctx.stroke();
+  }
+  for (const s of STARS) {
+    const x = X(s.l), y = Y(s.b), r = clamp(2.5 - 0.5 * s.mag, 0.8, 3.4) * (k > 6 ? 1.15 : 1);
+    if (x < -4 || x > W + 4) continue;
+    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
+  }
+  // Messier objects
+  for (const o of MESSIER) { const [l, b] = lonLat(o.g); o.x = X(l); o.y = Y(b); mSymbol(o.x, o.y, o.type, k > 7 ? 1.25 : 1); }
+  // the ecliptic, where the Sun, Moon and planets run
+  const eps = (23.439 - 4e-7 * (jd - 2451545)) * D2R, ecl = [];
+  for (let i = 0; i <= 180; i++) { const lam = i * 2 * D2R; ecl.push(F.toG([Math.cos(lam), Math.cos(eps) * Math.sin(lam), Math.sin(eps) * Math.sin(lam)])); }
+  ctx.strokeStyle = 'rgba(198,168,255,0.42)'; ctx.lineWidth = 1; ctx.setLineDash([5, 5]); strokeRun(ecl); ctx.setLineDash([]);
+  // below the horizon, dimmed; above it, the twilight or daylight washing the band out
+  ctx.save(); ctx.beginPath(); ctx.rect(0, yN, W, yS - yN); ctx.clip();
+  horizonPath(Z, Z[2] > 0 ? yS + 2 : yN - 2); ctx.fillStyle = 'rgba(3,6,12,0.66)'; ctx.fill();
+  if (sAlt > -18) {
+    const i = skyIndex(sAlt), c = SKY[Math.max(1, i)], a = Math.pow(clamp((sAlt + 18) / 18, 0, 1), 1.6) * 0.62;
+    horizonPath(Z, Z[2] > 0 ? yN - 2 : yS + 2); ctx.fillStyle = `rgba(${c.join(',')},${a.toFixed(3)})`; ctx.fill();
+  }
+  ctx.restore();
+  // hatched: never rises from here (always below the horizon, so drawn over the dimming)
+  const mask = neverMask(jd);
+  if (hatchCv.width !== cv.width || hatchCv.height !== cv.height) { hatchCv.width = cv.width; hatchCv.height = cv.height; }
+  const hc = hatchCv.getContext('2d');
+  hc.setTransform(1, 0, 0, 1, 0, 0); hc.globalCompositeOperation = 'source-over'; hc.clearRect(0, 0, hatchCv.width, hatchCv.height);
+  hc.imageSmoothingEnabled = true;
+  for (let n = -1; n <= 1; n++) hc.drawImage(mask, (x0 + n * Wf) * dpr, yN * dpr, Wf * dpr, (yS - yN) * dpr);
+  hc.globalCompositeOperation = 'source-in'; hc.drawImage(hatchPattern(), 0, 0);
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(hatchCv, 0, 0); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  // 30° and 60° up, dotted rings round the overhead point
+  ctx.strokeStyle = 'rgba(227,233,242,0.42)'; ctx.lineWidth = 1; ctx.setLineDash([2, 4]);
+  for (const alt of [30, 60]) { const pts = []; for (let az = 0; az <= 360; az += 2) pts.push(atAltAz(alt, az, F)); strokeRun(pts); }
+  ctx.setLineDash([]);
+  const south = PLACE.lat >= 0 ? 180 : 0;
+  for (const alt of [30, 60]) { const [l, b] = lonLat(atAltAz(alt, south, F)), x = X(l), y = Y(b); if (x > 20 && x < W - 20 && y > mapTop + 40 && y < mapBot - 10) halo(ctx, `${alt}°`, x + 12, y - 8, FONT(9.5), 'rgba(227,233,242,0.75)', 'left'); }
+  // the horizon, with its compass points
+  horizonPath(Z); ctx.strokeStyle = C.accent; ctx.lineWidth = 1.7; ctx.stroke();
+  for (let az = 0; az < 360; az += 45) {
+    const [l, b] = lonLat(atAltAz(0, az, F)), [l2, b2] = lonLat(atAltAz(6, az, F)), x = X(l), y = Y(b);
+    if (x < 6 || x > W - 6 || y < mapTop || y > mapBot) continue;
+    let dx = X(l2) - x, dy = Y(b2) - y, n = Math.hypot(dx, dy);
+    if (!n || n > W / 2) { dx = 0; dy = Z[2] > 0 ? -1 : 1; n = 1; } // across the map's edge: just point up the sky
+    dx /= n; dy /= n;
+    const major = az % 90 === 0;
+    ctx.strokeStyle = C.accent; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + dx * 5, y + dy * 5); ctx.stroke();
+    halo(ctx, compass(az), x + dx * (major ? 14 : 13), y + dy * (major ? 14 : 13), FONT(major ? 11.5 : 9.5, 600), major ? C.accent : 'rgba(95,208,220,0.78)');
+  }
+  // overhead
+  { const [l, b] = lonLat(Z), x = X(l), y = Y(b);
+    ctx.strokeStyle = C.accent; ctx.lineWidth = 1.4; ctx.beginPath(); ctx.moveTo(x - 7, y); ctx.lineTo(x + 7, y); ctx.moveTo(x, y - 7); ctx.lineTo(x, y + 7); ctx.stroke();
+    boxes.push(chip(ctx, 'overhead', x + 10, y, FONT(9.5, 600), C.accent)); }
+  // the Sun and the Moon
+  { const [l, b] = lonLat(sunG), x = X(l), y = Y(b), g = ctx.createRadialGradient(x, y, 0, x, y, 22);
+    g.addColorStop(0, 'rgba(255,231,168,0.55)'); g.addColorStop(1, 'rgba(255,231,168,0)'); ctx.fillStyle = g; ctx.fillRect(x - 22, y - 22, 44, 44);
+    ctx.fillStyle = C.sun; ctx.beginPath(); ctx.arc(x, y, 6, 0, TAU); ctx.fill();
+    halo(ctx, 'Sun', x, y + 15, FONT(10, 600), C.sun); boxes.push({ x: x - 14, y: y - 8, w: 28, h: 30 }); }
+  { const [l, b] = lonLat(moon.g), x = X(l), y = Y(b);
+    moonDisc(ctx, x, y, 5.5, moon.lit, moon.waxing);
+    halo(ctx, `Moon ${Math.round(moon.lit * 100)}%`, clamp(x, 36, W - 36), y + 14, FONT(10, 600), '#fff0d6'); boxes.push({ x: x - 30, y: y - 8, w: 60, h: 30 }); }
+  // Sgr A*
+  const gAlt = altAz(SGR.g, F)[0], xg = X(359.944), yg = Y(-0.046);
+  ctx.strokeStyle = C.core; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.arc(xg, yg, 6, 0, TAU); ctx.stroke();
+  boxes.push(chip(ctx, `Sgr A* · ${gAlt > -0.5667 ? upText(gAlt) : 'below the horizon'}`, xg + 10, yg - 13, FONT(10, 600), C.core));
+  // labels: constellations along the band, star names, Messier numbers when zoomed in, longitude along the bottom
+  ctx.save(); ctx.letterSpacing = '1.5px';
+  for (const [l, s] of BAND_LABELS) { const x = X(l), y = Y(l === 203 ? -27 : l === 348 ? 22 : 13); if (x > 40 && x < W - 40 && y > mapTop + 30 && free(x - 40, y - 7, 80, 14)) halo(ctx, s, x, y, FONT(9.5, 500), 'rgba(227,233,242,0.62)'); }
+  ctx.restore();
+  for (const s of STARS) {
+    if (s.mag > (k > 9 ? 2.6 : k > 5.5 ? 1.7 : 1.0)) continue;
+    const x = X(s.l), y = Y(s.b); if (x < 10 || x > W - 10 || y < mapTop + 34 || y > mapBot) continue;
+    ctx.font = FONT(9.5); const w = ctx.measureText(s.name).width, right = x > W - w - 30;
+    if (free(right ? x - w - 6 : x + 4, y - 6, w + 2, 12)) halo(ctx, s.name, right ? x - 5 : x + 5, y, FONT(9.5), 'rgba(227,233,242,0.8)', right ? 'right' : 'left');
+  }
+  for (const o of MESSIER) {
+    if (!(k > 7 || MSHOW.has(o.n))) continue;
+    if (o.x < 10 || o.x > W - 20 || o.y < mapTop + 34 || o.y > mapBot) continue;
+    ctx.font = FONT(9, 500); const w = ctx.measureText(o.id).width;
+    if (free(o.x + 4, o.y - 12, w + 2, 11)) halo(ctx, o.id, o.x + 5, o.y - 6, FONT(9, 500), mColour(o.type), 'left');
+  }
+  const ly = Math.min(yS, mapBot) - 10, step = k > 10 ? 10 : k > 5 ? 15 : 30;
+  for (let l = 0; l < 360; l += step) { const x = X(l); if (x > 16 && x < W - 16 && free(x - 18, ly - 6, 36, 12)) halo(ctx, l === 0 ? '0° centre' : `${l}°`, x, ly, FONT(9), C.soft); }
+  for (const b of [-60, -30, 30, 60]) { const y = Y(b); if (y > mapTop + 40 && y < mapBot - 20) halo(ctx, `${b > 0 ? '+' : '−'}${Math.abs(b)}°`, 8, y - 7, FONT(9), 'rgba(147,160,181,0.8)', 'left'); }
+  writeCaption(ms, F, gAlt);
+  refreshTip();
+}
+const mColour = t => t === 'GC' ? '#ffd59a' : t === 'OC' ? '#bcd4ff' : t === 'Gal' ? '#c9b8ff' : t === 'Neb' || t === 'PN' || t === 'SNR' ? '#ff9fbd' : '#d5dce6';
+function mSymbol(x, y, type, s = 1) {
+  if (x < -6 || x > W + 6 || y < -6 || y > H + 6) return;
+  const c = mColour(type); ctx.globalAlpha = 0.85;
+  if (type === 'GC') { const r = 2.6 * s; ctx.strokeStyle = c; ctx.lineWidth = 1.1; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.moveTo(x - r, y); ctx.lineTo(x + r, y); ctx.moveTo(x, y - r); ctx.lineTo(x, y + r); ctx.stroke(); }
+  else if (type === 'OC') { ctx.fillStyle = c; ctx.beginPath(); ctx.arc(x, y, 2.1 * s, 0, TAU); ctx.fill(); }
+  else if (type === 'Gal') { ctx.strokeStyle = c; ctx.lineWidth = 1.1; ctx.beginPath(); ctx.ellipse(x, y, 3.2 * s, 1.7 * s, -0.5, 0, TAU); ctx.stroke(); }
+  else if (type === 'Neb' || type === 'PN' || type === 'SNR') { const r = 2.8 * s; ctx.fillStyle = c; ctx.beginPath(); ctx.moveTo(x, y - r); ctx.lineTo(x + r, y); ctx.lineTo(x, y + r); ctx.lineTo(x - r, y); ctx.fill(); }
+  else { ctx.strokeStyle = c; ctx.lineWidth = 1; ctx.strokeRect(x - 2, y - 2, 4, 4); }
+  ctx.globalAlpha = 1;
+}
+function moonDisc(c, x, y, r, lit, waxing) {
+  c.fillStyle = '#2a3346'; c.beginPath(); c.arc(x, y, r, 0, TAU); c.fill();
+  c.fillStyle = '#fff0d6'; c.beginPath();
+  const t = 1 - 2 * lit, s = waxing ? 1 : -1; // the terminator as a half-ellipse
+  c.arc(x, y, r, -Math.PI / 2, Math.PI / 2, s < 0);
+  c.ellipse(x, y, Math.abs(t) * r, r, 0, Math.PI / 2, -Math.PI / 2, (t > 0) === (s > 0));
+  c.fill();
+}
+function writeCaption(ms, F, gAlt) {
+  const a = arch(F), names = archNames(F), runs = names.length > 2 ? `from ${names[0]} through ${list(names.slice(1, -1))} to ${names[names.length - 1]}` : list(names);
+  const p = sgrPass(ms - DAY / 2);
+  const sgr = p.never ? `Sgr A* never rises from ${PLACE.name}.` : p.always ? `Sgr A* never sets from ${PLACE.name}; it is ${upText(gAlt)}.`
+    : `Sgr A* ${gAlt > -0.5667 ? `is ${upText(gAlt)}` : 'is below the horizon'}: rises ${hhmm(p.rise)}, highest ${hhmm(p.tr)} at ${p.peak.toFixed(0)}°, sets ${hhmm(p.set)}.`;
+  // within 3° of level, the band lies along the horizon and has no "upper half" to speak of
+  const band = a.height < 3 ? `The Milky Way lies flat along your horizon, all the way round: its plane is within ${a.height.toFixed(1)}° of level.`
+    : `The half of the Milky Way above your horizon runs ${runs}, highest in ${along(a.top)} at ${a.height.toFixed(0)}°.`;
+  const html = `<b>${hhmm(ms)}</b> ${band}<br><span class="soft">${sgr}</span>`;
+  if (html !== caption) { caption = html; $('caption').innerHTML = html; }
+}
+
+// ---------- what's under the pointer ----------
+function pick(x, y) {
+  const F = frame(jdOf(instant())), where = g => { const [alt, az] = altAz(g, F); return alt >= 0 ? `${alt.toFixed(0)}° up in the ${compass(az)}` : neverRises(g, F) ? `never rises from ${PLACE.name}` : `below the horizon, ${(-alt).toFixed(0)}° down in the ${compass(az)}`; };
+  const near = (px, py) => Math.hypot(px - x, py - y) < 11;
+  const xg = X(359.944), yg = Y(-0.046);
+  if (near(xg, yg)) return ['Sgr A*', 'the black hole at the centre of the galaxy, 26,700 ly away', where(SGR.g)];
+  const sunG = sunGal(F), [ls, bs] = lonLat(sunG); if (near(X(ls), Y(bs))) return ['The Sun', where(sunG)];
+  const m = moonGal(F), [lm, bm] = lonLat(m.g); if (near(X(lm), Y(bm))) return ['The Moon', `${Math.round(m.lit * 100)}% lit`, where(m.g)];
+  let best = null, bd = 11;
+  for (const o of MESSIER) { const d = Math.hypot(o.x - x, o.y - y); if (d < bd) { bd = d; best = o; } }
+  if (best) return [`${best.id}${best.name ? ` · ${best.name}` : ''}`, TYPE_NAME[best.type] || best.type, where(best.g)];
+  for (const s of STARS) if (near(X(s.l), Y(s.b))) return [s.name, `magnitude ${s.mag.toFixed(1)}`, where(s.g)];
+  const l = lOf(x), b = bOf(y);
+  if (Math.abs(b) > 90) return null;
+  const g = galVec(l, b);
+  return [Math.abs(b) < 12 ? `In ${along(l)}` : 'Sky', `longitude ${l.toFixed(0)}°, latitude ${b >= 0 ? '+' : '−'}${Math.abs(b).toFixed(0)}°`, where(g)];
+}
+function tipAt(x, y) { const t = pick(x, y); t ? showTip(t, x, y) : hideTip(); }
+
+// ---------- gestures: drag to slide, pinch or scroll to zoom, tap or hover for a readout ----------
+const ptrs = new Map();
+let gest = null;
+cv.addEventListener('pointerdown', e => {
+  cv.setPointerCapture(e.pointerId);
+  ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  const p = [...ptrs.values()];
+  gest = p.length === 1 ? { x: p[0].x, y: p[0].y, lc: view.lc, bc: view.bc, moved: false }
+    : { d: Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y), k: view.k, mx: (p[0].x + p[1].x) / 2, my: (p[0].y + p[1].y) / 2, moved: true };
+  if (p.length === 2) { gest.l = lOf(gest.mx); gest.b = bOf(gest.my); }
+});
+cv.addEventListener('pointermove', e => {
+  if (!ptrs.has(e.pointerId)) { if (e.pointerType === 'mouse') tipAt(e.clientX, e.clientY); return; }
+  ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  const p = [...ptrs.values()];
+  if (p.length === 1 && gest && gest.lc !== undefined) {
+    const dx = p[0].x - gest.x, dy = p[0].y - gest.y;
+    if (!gest.moved && Math.hypot(dx, dy) < 5) return;
+    gest.moved = true; cv.classList.add('dragging'); hideTip();
+    view.lc = gest.lc + dx / view.k; view.bc = gest.bc + dy / view.k; clampView(); invalidate();
+  } else if (p.length === 2 && gest && gest.d) {
+    const d = Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y), mx = (p[0].x + p[1].x) / 2, my = (p[0].y + p[1].y) / 2;
+    view.k = clamp(gest.k * d / gest.d, kFit, Math.max(kFit * 8, 30));
+    view.lc = gest.l - (W / 2 - mx) / view.k; view.bc = gest.b - (yMid() - my) / view.k; clampView(); invalidate();
+  }
+});
+const endPtr = e => {
+  if (!ptrs.has(e.pointerId)) return;
+  const tap = gest && !gest.moved && ptrs.size === 1;
+  ptrs.delete(e.pointerId);
+  cv.classList.remove('dragging');
+  if (tap) tipAt(e.clientX, e.clientY);
+  const p = [...ptrs.values()];
+  gest = p.length === 1 ? { x: p[0].x, y: p[0].y, lc: view.lc, bc: view.bc, moved: true } : null;
+};
+cv.addEventListener('pointerup', endPtr);
+cv.addEventListener('pointercancel', endPtr);
+cv.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse' && !ptrs.size) hideTip(); });
+cv.addEventListener('wheel', e => { e.preventDefault(); hideTip(); zoomAt(e.clientX, e.clientY, view.k * Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0022))); }, { passive: false });
+cv.addEventListener('dblclick', e => zoomAt(e.clientX, e.clientY, view.k * 2));
+$('zin').addEventListener('click', () => zoomAt(W / 2, yMid(), view.k * 1.6));
+$('zout').addEventListener('click', () => zoomAt(W / 2, yMid(), view.k / 1.6));
+$('zfit').addEventListener('click', () => { view.k = kFit; view.lc = 0; view.bc = 0; clampView(); invalidate(); });
+if (matchMedia('(pointer: coarse)').matches) $('zoom').hidden = true;
+
+// ---------- start: Dublin (or the last place picked), now; or a place and moment from the address ----------
+function frameLoop() { if (dirty) { dirty = false; try { draw(); } catch (e) { console.error(e); } } requestAnimationFrame(frameLoop); }
+startFromAddress();
+window.addEventListener('resize', layout);
+layout();
+requestAnimationFrame(frameLoop);
+if (document.fonts && document.fonts.load) Promise.all(['10px "IBM Plex Mono"', '600 10px "IBM Plex Mono"'].map(f => document.fonts.load(f))).catch(() => {}).then(() => { layout(); });
+
+})();
+</script>
+</body>
+</html>
