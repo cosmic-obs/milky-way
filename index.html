@@ -144,6 +144,9 @@ input[type="range"]::-moz-range-thumb { width: 16px; height: 16px; border-radius
 .place li small, .place .now { display: block; color: var(--soft); font: 400 12px var(--font-data); }
 .place .msg:empty { display: none; }
 @media (max-width: 520px) { .caption { font-size: 11px; padding: 6px 9px; } .pill { padding: 7px 11px; } }
+/* on a phone, smaller projection buttons and a shorter place name, so the top bar fits */
+@media (max-width: 520px) { .pill[data-proj] { padding: 7px 8px; font-size: 11px; } #placebtn { max-width: 27vw; } }
+@media (max-width: 380px) { #placebtn { max-width: 22vw; } }
 </style>
 </head>
 <body>
@@ -153,7 +156,10 @@ input[type="range"]::-moz-range-thumb { width: 16px; height: 16px; border-radius
   <div class="bar">
     <button type="button" class="pill" id="keybtn" aria-expanded="false" aria-controls="key">Key</button>
     <button type="button" class="pill" id="placebtn" aria-expanded="false" aria-controls="place">Dublin</button>
-
+    <span class="spacer"></span>
+    <button type="button" class="pill toggle" data-proj="flat" aria-pressed="true" title="Plate carrée: even in longitude and latitude">Flat</button>
+    <button type="button" class="pill toggle" data-proj="mollweide" aria-pressed="false" title="Mollweide: an equal-area oval">Mollweide</button>
+    <button type="button" class="pill toggle" data-proj="hammer" aria-pressed="false" title="Hammer–Aitoff: an equal-area oval">Hammer</button>
   </div>
   <p class="caption" id="caption" aria-live="polite"></p>
 </header>
@@ -167,6 +173,7 @@ input[type="range"]::-moz-range-thumb { width: 16px; height: 16px; border-radius
 <section class="panel key" id="key" hidden>
   <div class="panel-top"><h2>Milky Way Unrolled · <span class="place-name">Dublin</span></h2><span></span><button type="button" class="x" id="key-close" aria-label="Close">×</button></div>
   <p>The whole Milky Way laid flat. Its plane runs across the middle, with the centre of the galaxy in the middle of the picture and longitude increasing to the left. Your horizon is the wave: as the Earth turns, it rolls across the band.</p>
+  <p>There are three ways to flatten the sky. <b>Flat</b> spreads it evenly by longitude and latitude (the plate carrée projection), so it stretches the sky more and more towards the top and bottom. <b>Mollweide</b> and <b>Hammer</b> (Hammer–Aitoff) fold it into an oval that keeps every patch of sky at its true size: Mollweide keeps the lines of latitude straight, and Hammer bends them but keeps shapes truer near the edges.</p>
   <ul>
     <li><i aria-hidden="true"><svg width="26" height="14" viewBox="0 0 26 14"><path d="M1 10C6 10 8 3 13 3s7 8 12 8" fill="none" stroke="#5fd0dc" stroke-width="1.8"/></svg></i><span>Your horizon, with its compass points. The sky below it is dimmed</span></li>
     <li><i aria-hidden="true"><svg width="26" height="14" viewBox="0 0 26 14"><rect x="1" y="1" width="24" height="12" fill="rgba(7,13,26,0.6)"/><path d="M-3 13l12-12M4 13l12-12M11 13l12-12M18 13l12-12" stroke="rgba(160,172,196,0.8)" stroke-width="1"/></svg></i><span>Hatched: the part of the sky that never rises from <span class="place-name">Dublin</span></span></li>
@@ -647,12 +654,13 @@ function hideTip() { tip.hidden = true; tipAt0 = null; }
 function refreshTip() { if (tipAt0 && !tip.hidden) { const t = pick(tipAt0.x, tipAt0.y); t ? showTip(t, tipAt0.x, tipAt0.y) : hideTip(); } }
 
 // ---------- the Milky Way: NASA's Deep Star Maps 2020 picture in galactic coordinates, in three levels of detail ----------
-// sky/0.jpg is the whole sky at 2048 x 1024; sky/1-<col>-<row>.jpg and sky/2-<col>-<row>.jpg are 1024-pixel tiles of the 4096
-// and 8192 versions, fetched only where the screen has more pixels per degree than the level below can give.
+// One set for each projection, in sky/<projection>/: 0.jpg is the whole sky at 2048 x 1024, and 1-<col>-<row>.jpg and
+// 2-<col>-<row>.jpg are 1024-pixel tiles of the 4096 and 8192 versions, fetched only where the screen has more pixels
+// per degree than the level below can give.
 const SKY_LEVELS = [{ cols: 1, rows: 1 }, { cols: 4, rows: 2 }, { cols: 8, rows: 4 }];
 const tiles = new Map();
 function tile(level, col, row, fetch = true) {
-  const key = level ? `${level}-${col}-${row}` : '0';
+  const key = `${proj}/${level ? `${level}-${col}-${row}` : '0'}`;
   let t = tiles.get(key);
   if (!t && fetch) {
     t = { img: new Image(), ok: false };
@@ -663,7 +671,7 @@ function tile(level, col, row, fetch = true) {
   }
   return t;
 }
-// the picture spans x0 to x0 + 360k across and yN to yN + 180k down; a missing tile leaves the coarser level showing
+// the picture fills the map's 2:1 box, x0 to x0 + 360k across and yN to yN + 180k down; a missing tile leaves the coarser level showing
 function drawSky(x0, yN, k) {
   const Wf = 360 * k, Hf = 180 * k, ppd = k * dpr; // device pixels per degree
   const top = ppd > 12.5 ? 2 : ppd > 6.3 ? 1 : 0;
@@ -734,19 +742,59 @@ const FIGURES = [
 const BAND_LABELS = [[7, 'SAGITTARIUS'], [42, 'AQUILA'], [80, 'CYGNUS'], [118, 'CASSIOPEIA'], [146, 'PERSEUS'], [170, 'AURIGA'], [203, 'ORION'], [242, 'PUPPIS'], [266, 'VELA'], [288, 'CARINA'], [313, 'CENTAURUS'], [348, 'SCORPIUS']];
 const MSHOW = new Set([1, 8, 11, 13, 16, 17, 20, 22, 27, 31, 33, 42, 44, 45, 51, 57, 81, 87, 101, 104]);
 
-// ---------- the view: longitude across (the centre of the galaxy in the middle, longitude increasing to the left), latitude up ----------
+// ---------- three ways to flatten the sky ----------
+// Each projection takes galactic longitude l (−180° to 180°, increasing to the left) and latitude b, in degrees, to map
+// units: u across (+180 at the left edge to −180 at the right) and v up (−90 to 90). All three fill the same 2:1 box, so
+// panning and zooming work alike. Flat is the plate carrée, even in longitude and latitude, which stretches the sky more
+// and more away from the plane. Mollweide and Hammer–Aitoff are equal-area ovals: Mollweide keeps the parallels straight,
+// Hammer bends them and shears shapes less towards the edges. tools/sky.js has the matching inverses that make the pictures.
+const mollTheta = p => { // Mollweide's auxiliary angle: 2θ + sin 2θ = π sin φ
+  if (Math.abs(p) > 1.5707) return Math.sign(p) * Math.PI / 2;
+  const s = Math.PI * Math.sin(p);
+  let t = p;
+  for (let i = 0; i < 20; i++) { const d = (2 * t + Math.sin(2 * t) - s) / (2 + 2 * Math.cos(2 * t)); t = clamp(t - d, -Math.PI / 2, Math.PI / 2); if (Math.abs(d) < 1e-10) break; }
+  return t;
+};
+const PROJ = {
+  flat: {
+    fwd: (l, b) => [l, b],
+    inv: (u, v) => Math.abs(u) <= 180 && Math.abs(v) <= 90 ? [u, v] : null,
+  },
+  mollweide: {
+    fwd: (l, b) => { const t = mollTheta(b * D2R); return [l * Math.cos(t), 90 * Math.sin(t)]; },
+    inv: (u, v) => {
+      if ((u / 180) ** 2 + (v / 90) ** 2 > 1) return null;
+      const t = Math.asin(clamp(v / 90, -1, 1)), c = Math.cos(t);
+      return [c > 1e-9 ? clamp(u / c, -180, 180) : 0, Math.asin(clamp((2 * t + Math.sin(2 * t)) / Math.PI, -1, 1)) * R2D];
+    },
+  },
+  hammer: {
+    fwd: (l, b) => { const p = b * D2R, h = l * D2R / 2, d = Math.sqrt(1 + Math.cos(p) * Math.cos(h)); return [180 * Math.cos(p) * Math.sin(h) / d, 90 * Math.sin(p) / d]; },
+    inv: (u, v) => {
+      if ((u / 180) ** 2 + (v / 90) ** 2 > 1) return null;
+      const x = u * 2 * Math.SQRT2 / 180, y = v * Math.SQRT2 / 90, z = Math.sqrt(Math.max(0, 1 - (x / 4) ** 2 - (y / 2) ** 2));
+      return [2 * Math.atan2(z * x, 2 * (2 * z * z - 1)) * R2D, Math.asin(clamp(z * y, -1, 1)) * R2D];
+    },
+  },
+};
+
+// ---------- the view: the centre of the galaxy in the middle, longitude increasing to the left, latitude up ----------
 // The map has fixed edges at longitude +180° (left) and −180° (right), the anticentre, and the view never slides past them.
 const cv = $('view'), ctx = cv.getContext('2d');
-const view = { lc: 0, bc: 0, k: 0 }; // lc, the longitude at the middle of the screen, runs from -180 to 180
-let W = 0, H = 0, dpr = 1, mapTop = 0, mapBot = 0, kFit = 1, dirty = true;
+const view = { lc: 0, bc: 0, k: 0 }; // the map units at the middle of the screen, and pixels per unit
+let W = 0, H = 0, dpr = 1, mapTop = 0, mapBot = 0, kFit = 1, dirty = true, proj = 'flat', PJ = PROJ.flat;
 const yMid = () => (mapTop + mapBot) / 2;
-const X = l => W / 2 - (wrap180(l) - view.lc) * view.k;
-const Y = b => yMid() - (b - view.bc) * view.k;
-const lOf = x => view.lc + (W / 2 - x) / view.k;
-const bOf = y => view.bc + (yMid() - y) / view.k;
-const seam = (xa, xb) => Math.abs(xa - xb) > 180 * view.k; // two neighbouring points on either side of the map's edge
+const X = u => W / 2 - (u - view.lc) * view.k, Y = v => yMid() - (v - view.bc) * view.k; // map units to the screen
+const uOf = x => view.lc + (W / 2 - x) / view.k, vOf = y => view.bc + (yMid() - y) / view.k;
+const P = (l, b) => { const [u, v] = PJ.fwd(l, b); return [X(u), Y(v)]; }; // a place in the sky to the screen, l from −180 to 180
+const S = (l, b) => P(wrap180(l), b); // the same, for any longitude
+const skyAt = (x, y) => PJ.inv(uOf(x), vOf(y)); // [l, b] under a point on the screen, or null off the map
+const across = (la, lb) => Math.abs(wrap180(la) - wrap180(lb)) > 180; // two nearby points on either side of the map's edge
+// the whole sky: the flat map fills the screen's width (or height) and slides; the ovals fit inside it, clear of the bars
+const fitK = () => proj === 'flat' ? Math.max(W / 360, (mapBot - mapTop) / 180) : Math.min((W - 16) / 360, (mapBot - mapTop - 44) / 180);
+const maxK = () => Math.max(kFit * 8, 30);
 function clampView() {
-  view.k = clamp(view.k, kFit, Math.max(kFit * 8, 30));
+  view.k = clamp(view.k, kFit, maxK());
   const half = (mapBot - mapTop) / 2 / view.k, across = W / 2 / view.k;
   view.bc = half >= 90 ? 0 : clamp(view.bc, -90 + half, 90 - half);
   view.lc = across >= 180 ? 0 : clamp(view.lc, -180 + across, 180 - across);
@@ -757,37 +805,39 @@ function layout() {
   mapTop = $('hud-top').querySelector('.bar').getBoundingClientRect().bottom + 6;
   mapBot = H - $('hud-bottom').offsetHeight + 22;
   const fitted = view.k && Math.abs(view.k - kFit) < 1e-6;
-  kFit = Math.max(W / 360, (mapBot - mapTop) / 180);
+  kFit = fitK();
   if (!view.k || fitted) view.k = kFit;
   $('zoom').style.bottom = `${H - mapBot + 30}px`;
   clampView();
   invalidate();
 }
 function zoomAt(x, y, k) {
-  const l = lOf(x), b = bOf(y);
-  view.k = clamp(k, kFit, Math.max(kFit * 8, 30));
-  view.lc = l - (W / 2 - x) / view.k;
-  view.bc = b - (yMid() - y) / view.k;
+  const u = uOf(x), v = vOf(y);
+  view.k = clamp(k, kFit, maxK());
+  view.lc = u - (W / 2 - x) / view.k;
+  view.bc = v - (yMid() - y) / view.k;
   clampView();
   invalidate();
 }
 function invalidate() { dirty = true; }
 function placeChanged() { MASK.key = ''; invalidate(); }
 
-// ---------- the part of the sky that never rises from here, as a mask on the picture's grid (half a degree a cell) ----------
+// ---------- the part of the sky that never rises from here, as a mask on the map's 2:1 box (half a unit a cell) ----------
 const MASK = { cv: null, key: '' };
 function neverMask(jd) {
-  const key = `${PLACE.lat}|${Math.round((jd - 2451545) / 365)}`;
+  const key = `${proj}|${PLACE.lat}|${Math.round((jd - 2451545) / 365)}`;
   if (MASK.key === key) return MASK.cv;
   const w = 720, h = 360, m = MASK.cv || document.createElement('canvas');
   m.width = w; m.height = h;
   const c = m.getContext('2d'), img = c.createImageData(w, h), px = img.data;
   const ncp = mul(GAL, mulT(precMat(jd), [0, 0, 1])), lim = Math.cos(PLACE.lat * D2R), north = PLACE.lat >= 0;
   for (let y = 0; y < h; y++) {
-    const b = (90 - (y + 0.5) / h * 180) * D2R, cb = Math.cos(b), sb = Math.sin(b);
+    const v = 90 - (y + 0.5) / h * 180;
     for (let x = 0; x < w; x++) {
-      const l = (180 - (x + 0.5) / w * 360) * D2R, s = ncp[0] * cb * Math.cos(l) + ncp[1] * cb * Math.sin(l) + ncp[2] * sb; // sine of the declination
-      if (north ? s < -lim : s > lim) px[(y * w + x) * 4 + 3] = 255;
+      const s = PJ.inv(180 - (x + 0.5) / w * 360, v);
+      if (!s) continue;
+      const l = s[0] * D2R, b = s[1] * D2R, cb = Math.cos(b), sd = ncp[0] * cb * Math.cos(l) + ncp[1] * cb * Math.sin(l) + ncp[2] * Math.sin(b); // sine of the declination
+      if (north ? sd < -lim : sd > lim) px[(y * w + x) * 4 + 3] = 255;
     }
   }
   c.putImageData(img, 0, 0);
@@ -808,120 +858,143 @@ function hatchPattern() {
 }
 
 // ---------- drawing ----------
-// a curve given as galactic directions, broken where it wraps round the edge of the map
+// the map's outline: a rectangle, or the oval
+function outlinePath() {
+  ctx.beginPath();
+  if (proj === 'flat') ctx.rect(X(180), Y(90), 360 * view.k, 180 * view.k);
+  else ctx.ellipse(X(0), Y(0), 180 * view.k, 90 * view.k, 0, 0, TAU);
+}
+const trace = (pts, from = true) => pts.forEach(([x, y], i) => i || !from ? ctx.lineTo(x, y) : ctx.moveTo(x, y));
+// a curve given as galactic directions, broken where it crosses the edge of the map
 function strokeRun(pts) {
   ctx.beginPath();
-  let px = null;
+  let pl = null;
   for (const g of pts) {
-    if (!g) { px = null; continue; }
-    const [l, b] = lonLat(g), x = X(l), y = Y(b);
-    if (px === null || seam(x, px)) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-    px = x;
+    if (!g) { pl = null; continue; }
+    const [l, b] = lonLat(g), [x, y] = S(l, b);
+    if (pl === null || across(l, pl)) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    pl = l;
   }
   ctx.stroke();
 }
-// the horizon as a wave: for each longitude, the latitude where the horizon crosses it
+// the horizon: for each longitude, the latitude where it crosses. It runs from the map's left edge (+180°) to its right
+// (−180°), crossing each at the same latitude, which on the ovals is the same point of the outline seen from either side.
 const horizonB = (l, Z) => { const A = Z[0] * Math.cos(l * D2R) + Z[1] * Math.sin(l * D2R); return Math.atan2(-A * Math.sign(Z[2] || 1e-12), Math.abs(Z[2])) * R2D; };
-function horizonPath(Z, toEdge) {
-  ctx.beginPath();
-  for (let x = -4; x <= W + 4; x += 2) { const y = Y(horizonB(lOf(x), Z)); x < 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y); }
-  if (toEdge !== undefined) { ctx.lineTo(W + 4, toEdge); ctx.lineTo(-4, toEdge); ctx.closePath(); }
+function horizonLine(Z) {
+  const pts = [], step = Math.min(1, 2 / view.k);
+  for (let l = 180; l > -180; l -= step) pts.push(P(l, horizonB(l, Z)));
+  pts.push(P(-180, horizonB(-180, Z)));
+  return pts;
+}
+// one side of the horizon: the line, then down (or up) the map's right edge to the pole, along the pole (an edge of the
+// flat map, a point of the ovals) and back along the left edge
+function sidePath(line, Z, pole) {
+  const b0 = horizonB(180, Z), n = 36, edge = [];
+  for (let i = 1; i <= n; i++) edge.push(P(-180, b0 + (pole - b0) * i / n));
+  for (let i = 1; i < n; i++) edge.push(P(-180 + 360 * i / n, pole));
+  for (let i = 0; i <= n; i++) edge.push(P(180, pole + (b0 - pole) * i / n));
+  ctx.beginPath(); trace(line); trace(edge, false); ctx.closePath();
 }
 const SKY = [[11, 20, 38], [30, 42, 64], [59, 71, 96], [119, 129, 154], [174, 183, 199]];
 let caption = '', boxes = [];
 const free = (x, y, w, h) => { if (boxes.some(r => x < r.x + r.w && x + w > r.x && y < r.y + r.h && y + h > r.y)) return false; boxes.push({ x, y, w, h }); return true; };
 
 function draw() {
-  const ms = instant(), jd = jdOf(ms), F = frame(jd), Z = F.Z, k = view.k;
+  const ms = instant(), jd = jdOf(ms), F = frame(jd), Z = F.Z, k = view.k, oval = proj !== 'flat';
   const sunG = sunGal(F), sAlt = altAz(sunG, F)[0], moon = moonGal(F);
   boxes = [];
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
-  const yN = Y(90), yS = Y(-90), Wf = 360 * k, x0 = W / 2 - (180 - view.lc) * k;
-  ctx.fillStyle = 'rgb(11,20,38)'; ctx.fillRect(0, yN, W, yS - yN);
-  // the Milky Way
-  drawSky(x0, yN, k);
-  // a faint grid: latitude every 30°, longitude ticks along the bottom
+  // the Milky Way, inside the map's outline
+  ctx.save(); outlinePath(); ctx.fillStyle = 'rgb(11,20,38)'; ctx.fill(); ctx.clip();
+  drawSky(X(180), Y(90), k);
+  ctx.restore();
+  // a faint grid: latitude every 30°, and on the ovals longitude every 30° too
   ctx.strokeStyle = 'rgba(147,160,181,0.16)'; ctx.lineWidth = 1; ctx.setLineDash([1, 5]);
-  for (const b of [-60, -30, 30, 60]) { ctx.beginPath(); ctx.moveTo(0, Y(b)); ctx.lineTo(W, Y(b)); ctx.stroke(); }
+  for (const b of [-60, -30, 30, 60]) { const pts = []; for (let l = 180; l >= -180; l -= 3) pts.push(P(l, b)); ctx.beginPath(); trace(pts); ctx.stroke(); }
+  if (oval) for (let l = -150; l <= 150; l += 30) { const pts = []; for (let b = -90; b <= 90; b += 3) pts.push(P(l, b)); ctx.beginPath(); trace(pts); ctx.stroke(); }
   ctx.setLineDash([]);
   // stick figures and bright stars
   ctx.strokeStyle = 'rgba(190,204,228,0.22)'; ctx.lineWidth = 1;
   for (const [a, b] of FIGURES) {
-    const p = STAR[a], q = STAR[b], xa = X(p.l), xb = X(q.l);
-    if (seam(xa, xb)) continue;
-    ctx.beginPath(); ctx.moveTo(xa, Y(p.b)); ctx.lineTo(xb, Y(q.b)); ctx.stroke();
+    const p = STAR[a], q = STAR[b];
+    if (across(p.l, q.l)) continue;
+    const [xa, ya] = S(p.l, p.b), [xb, yb] = S(q.l, q.b);
+    ctx.beginPath(); ctx.moveTo(xa, ya); ctx.lineTo(xb, yb); ctx.stroke();
   }
   for (const s of STARS) {
-    const x = X(s.l), y = Y(s.b), r = clamp(2.5 - 0.5 * s.mag, 0.8, 3.4) * (k > 6 ? 1.15 : 1);
+    const [x, y] = S(s.l, s.b), r = clamp(2.5 - 0.5 * s.mag, 0.8, 3.4) * (k > 6 ? 1.15 : 1);
     if (x < -4 || x > W + 4) continue;
     ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
   }
   // Messier objects
-  for (const o of MESSIER) { const [l, b] = lonLat(o.g); o.x = X(l); o.y = Y(b); mSymbol(o.x, o.y, o.type, k > 7 ? 1.25 : 1); }
+  for (const o of MESSIER) { [o.x, o.y] = S(...lonLat(o.g)); mSymbol(o.x, o.y, o.type, k > 7 ? 1.25 : 1); }
   // the ecliptic, where the Sun, Moon and planets run
   const eps = (23.439 - 4e-7 * (jd - 2451545)) * D2R, ecl = [];
   for (let i = 0; i <= 180; i++) { const lam = i * 2 * D2R; ecl.push(F.toG([Math.cos(lam), Math.cos(eps) * Math.sin(lam), Math.sin(eps) * Math.sin(lam)])); }
   ctx.strokeStyle = 'rgba(198,168,255,0.42)'; ctx.lineWidth = 1; ctx.setLineDash([5, 5]); strokeRun(ecl); ctx.setLineDash([]);
   // below the horizon, dimmed; above it, the twilight or daylight washing the band out
-  ctx.save(); ctx.beginPath(); ctx.rect(0, yN, W, yS - yN); ctx.clip();
-  horizonPath(Z, Z[2] > 0 ? yS + 2 : yN - 2); ctx.fillStyle = 'rgba(3,6,12,0.66)'; ctx.fill();
+  const line = horizonLine(Z), down = Z[2] > 0 ? -90 : 90; // the galactic pole on the side below the horizon
+  ctx.save(); outlinePath(); ctx.clip();
+  sidePath(line, Z, down); ctx.fillStyle = 'rgba(3,6,12,0.66)'; ctx.fill();
   if (sAlt > -18) {
     const i = skyIndex(sAlt), c = SKY[Math.max(1, i)], a = Math.pow(clamp((sAlt + 18) / 18, 0, 1), 1.6) * 0.62;
-    horizonPath(Z, Z[2] > 0 ? yN - 2 : yS + 2); ctx.fillStyle = `rgba(${c.join(',')},${a.toFixed(3)})`; ctx.fill();
+    sidePath(line, Z, -down); ctx.fillStyle = `rgba(${c.join(',')},${a.toFixed(3)})`; ctx.fill();
   }
-  ctx.restore();
   // hatched: never rises from here (always below the horizon, so drawn over the dimming)
   const mask = neverMask(jd);
   if (hatchCv.width !== cv.width || hatchCv.height !== cv.height) { hatchCv.width = cv.width; hatchCv.height = cv.height; }
   const hc = hatchCv.getContext('2d');
   hc.setTransform(1, 0, 0, 1, 0, 0); hc.globalCompositeOperation = 'source-over'; hc.clearRect(0, 0, hatchCv.width, hatchCv.height);
   hc.imageSmoothingEnabled = true;
-  hc.drawImage(mask, x0 * dpr, yN * dpr, Wf * dpr, (yS - yN) * dpr);
+  hc.drawImage(mask, X(180) * dpr, Y(90) * dpr, 360 * k * dpr, 180 * k * dpr);
   hc.globalCompositeOperation = 'source-in'; hc.drawImage(hatchPattern(), 0, 0);
-  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(hatchCv, 0, 0); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(hatchCv, 0, 0);
+  ctx.restore();
+  if (oval) { outlinePath(); ctx.strokeStyle = 'rgba(147,160,181,0.35)'; ctx.lineWidth = 1; ctx.stroke(); }
   // 30° and 60° up, dotted rings round the overhead point
   ctx.strokeStyle = 'rgba(227,233,242,0.42)'; ctx.lineWidth = 1; ctx.setLineDash([2, 4]);
   for (const alt of [30, 60]) { const pts = []; for (let az = 0; az <= 360; az += 2) pts.push(atAltAz(alt, az, F)); strokeRun(pts); }
   ctx.setLineDash([]);
   const south = PLACE.lat >= 0 ? 180 : 0;
-  for (const alt of [30, 60]) { const [l, b] = lonLat(atAltAz(alt, south, F)), x = X(l), y = Y(b); if (x > 20 && x < W - 20 && y > mapTop + 40 && y < mapBot - 10) halo(ctx, `${alt}°`, x + 12, y - 8, FONT(9.5), 'rgba(227,233,242,0.75)', 'left'); }
+  for (const alt of [30, 60]) { const [x, y] = S(...lonLat(atAltAz(alt, south, F))); if (x > 20 && x < W - 20 && y > mapTop + 40 && y < mapBot - 10) halo(ctx, `${alt}°`, x + 12, y - 8, FONT(9.5), 'rgba(227,233,242,0.75)', 'left'); }
   // the horizon, with its compass points
-  horizonPath(Z); ctx.strokeStyle = C.accent; ctx.lineWidth = 1.7; ctx.stroke();
+  ctx.beginPath(); trace(line); ctx.strokeStyle = C.accent; ctx.lineWidth = 1.7; ctx.stroke();
   for (let az = 0; az < 360; az += 45) {
-    const [l, b] = lonLat(atAltAz(0, az, F)), [l2, b2] = lonLat(atAltAz(6, az, F)), x = X(l), y = Y(b);
+    const [l, b] = lonLat(atAltAz(0, az, F)), [l2, b2] = lonLat(atAltAz(6, az, F)), [x, y] = S(l, b), [x2, y2] = S(l2, b2);
     if (x < 6 || x > W - 6 || y < mapTop || y > mapBot) continue;
-    let dx = X(l2) - x, dy = Y(b2) - y, n = Math.hypot(dx, dy);
-    if (!n || seam(x, X(l2))) { dx = 0; dy = Z[2] > 0 ? -1 : 1; n = 1; } // across the map's edge: just point up the sky
+    let dx = x2 - x, dy = y2 - y, n = Math.hypot(dx, dy);
+    if (!n || across(l, l2)) { dx = 0; dy = Z[2] > 0 ? -1 : 1; n = 1; } // across the map's edge: just point up the sky
     dx /= n; dy /= n;
     const major = az % 90 === 0;
     ctx.strokeStyle = C.accent; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + dx * 5, y + dy * 5); ctx.stroke();
     halo(ctx, compass(az), x + dx * (major ? 14 : 13), y + dy * (major ? 14 : 13), FONT(major ? 11.5 : 9.5, 600), major ? C.accent : 'rgba(95,208,220,0.78)');
   }
   // overhead
-  { const [l, b] = lonLat(Z), x = X(l), y = Y(b);
+  { const [x, y] = S(...lonLat(Z));
     ctx.strokeStyle = C.accent; ctx.lineWidth = 1.4; ctx.beginPath(); ctx.moveTo(x - 7, y); ctx.lineTo(x + 7, y); ctx.moveTo(x, y - 7); ctx.lineTo(x, y + 7); ctx.stroke();
     boxes.push(chip(ctx, 'overhead', x + 10, y, FONT(9.5, 600), C.accent)); }
   // the Sun and the Moon
-  { const [l, b] = lonLat(sunG), x = X(l), y = Y(b), g = ctx.createRadialGradient(x, y, 0, x, y, 22);
+  { const [x, y] = S(...lonLat(sunG)), g = ctx.createRadialGradient(x, y, 0, x, y, 22);
     g.addColorStop(0, 'rgba(255,231,168,0.55)'); g.addColorStop(1, 'rgba(255,231,168,0)'); ctx.fillStyle = g; ctx.fillRect(x - 22, y - 22, 44, 44);
     ctx.fillStyle = C.sun; ctx.beginPath(); ctx.arc(x, y, 6, 0, TAU); ctx.fill();
     halo(ctx, 'Sun', x, y + 15, FONT(10, 600), C.sun); boxes.push({ x: x - 14, y: y - 8, w: 28, h: 30 }); }
-  { const [l, b] = lonLat(moon.g), x = X(l), y = Y(b);
+  { const [x, y] = S(...lonLat(moon.g));
     if (x > -6 && x < W + 6) {
-    moonDisc(ctx, x, y, 5.5, moon.lit, moon.waxing);
-    halo(ctx, `Moon ${Math.round(moon.lit * 100)}%`, clamp(x, 36, W - 36), y + 14, FONT(10, 600), '#fff0d6'); boxes.push({ x: x - 30, y: y - 8, w: 60, h: 30 }); } }
+      moonDisc(ctx, x, y, 5.5, moon.lit, moon.waxing);
+      halo(ctx, `Moon ${Math.round(moon.lit * 100)}%`, clamp(x, 36, W - 36), y + 14, FONT(10, 600), '#fff0d6'); boxes.push({ x: x - 30, y: y - 8, w: 60, h: 30 });
+    } }
   // Sgr A*
-  const gAlt = altAz(SGR.g, F)[0], xg = X(359.944), yg = Y(-0.046);
+  const gAlt = altAz(SGR.g, F)[0], [xg, yg] = S(359.944, -0.046);
   ctx.strokeStyle = C.core; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.arc(xg, yg, 6, 0, TAU); ctx.stroke();
   boxes.push(chip(ctx, `Sgr A* · ${gAlt > -0.5667 ? upText(gAlt) : 'below the horizon'}`, xg + 10, yg - 13, FONT(10, 600), C.core));
-  // labels: constellations along the band, star names, Messier numbers when zoomed in, longitude along the bottom
+  // labels: constellations along the band, star names, Messier numbers when zoomed in, longitude and latitude
   ctx.save(); ctx.letterSpacing = '1.5px';
-  for (const [l, s] of BAND_LABELS) { const x = X(l), y = Y(l === 203 ? -27 : l === 348 ? 22 : 13); if (x > 40 && x < W - 40 && y > mapTop + 30 && free(x - 40, y - 7, 80, 14)) halo(ctx, s, x, y, FONT(9.5, 500), 'rgba(227,233,242,0.62)'); }
+  for (const [l, s] of BAND_LABELS) { const [x, y] = S(l, l === 203 ? -27 : l === 348 ? 22 : 13); if (x > 40 && x < W - 40 && y > mapTop + 30 && free(x - 40, y - 7, 80, 14)) halo(ctx, s, x, y, FONT(9.5, 500), 'rgba(227,233,242,0.62)'); }
   ctx.restore();
   for (const s of STARS) {
     if (s.mag > (k > 9 ? 2.6 : k > 5.5 ? 1.7 : 1.0)) continue;
-    const x = X(s.l), y = Y(s.b); if (x < 10 || x > W - 10 || y < mapTop + 34 || y > mapBot) continue;
+    const [x, y] = S(s.l, s.b); if (x < 10 || x > W - 10 || y < mapTop + 34 || y > mapBot) continue;
     ctx.font = FONT(9.5); const w = ctx.measureText(s.name).width, right = x > W - w - 30;
     if (free(right ? x - w - 6 : x + 4, y - 6, w + 2, 12)) halo(ctx, s.name, right ? x - 5 : x + 5, y, FONT(9.5), 'rgba(227,233,242,0.8)', right ? 'right' : 'left');
   }
@@ -931,9 +1004,18 @@ function draw() {
     ctx.font = FONT(9, 500); const w = ctx.measureText(o.id).width;
     if (free(o.x + 4, o.y - 12, w + 2, 11)) halo(ctx, o.id, o.x + 5, o.y - 6, FONT(9, 500), mColour(o.type), 'left');
   }
-  const ly = Math.min(yS, mapBot) - 10, step = k > 10 ? 10 : k > 5 ? 15 : 30;
-  for (let l = 0; l < 360; l += step) { const x = X(l); if (x > 16 && x < W - 16 && free(x - 18, ly - 6, 36, 12)) halo(ctx, l === 0 ? '0° centre' : `${l}°`, x, ly, FONT(9), C.soft); }
-  for (const b of [-60, -30, 30, 60]) { const y = Y(b); if (y > mapTop + 40 && y < mapBot - 20) halo(ctx, `${b > 0 ? '+' : '−'}${Math.abs(b)}°`, 8, y - 7, FONT(9), 'rgba(147,160,181,0.8)', 'left'); }
+  // longitude: along the bottom of the flat map, just under the plane on the ovals
+  const step = k > 10 ? 10 : k > 5 ? 15 : 30, ly = Math.min(Y(-90), mapBot) - 10;
+  for (let l = 0; l < 360; l += step) {
+    if (l === 180) continue;
+    const [x, ye] = S(l, 0), y = oval ? ye + 11 : ly;
+    if (x > 16 && x < W - 16 && y > mapTop + 30 && y < mapBot - 4 && free(x - 18, y - 6, 36, 12)) halo(ctx, l === 0 ? '0° centre' : `${l}°`, x, y, FONT(9), C.soft);
+  }
+  // latitude: at the left of the screen on the flat map, at the left end of each parallel on the ovals
+  for (const b of [-60, -30, 30, 60]) {
+    const [ex, y] = P(180, b), x = oval ? Math.max(8, ex + 6) : 8;
+    if (y > mapTop + 40 && y < mapBot - 20 && x < W - 40) halo(ctx, `${b > 0 ? '+' : '−'}${Math.abs(b)}°`, x, y - 7, FONT(9), 'rgba(147,160,181,0.8)', 'left');
+  }
   writeCaption(ms, F, gAlt);
   refreshTip();
 }
@@ -972,17 +1054,16 @@ function writeCaption(ms, F, gAlt) {
 function pick(x, y) {
   const F = frame(jdOf(instant())), where = g => { const [alt, az] = altAz(g, F); return alt >= 0 ? `${alt.toFixed(0)}° up in the ${compass(az)}` : neverRises(g, F) ? `never rises from ${PLACE.name}` : `below the horizon, ${(-alt).toFixed(0)}° down in the ${compass(az)}`; };
   const near = (px, py) => Math.hypot(px - x, py - y) < 11;
-  const xg = X(359.944), yg = Y(-0.046);
-  if (near(xg, yg)) return ['Sgr A*', 'the black hole at the centre of the galaxy, 26,700 ly away', where(SGR.g)];
-  const sunG = sunGal(F), [ls, bs] = lonLat(sunG); if (near(X(ls), Y(bs))) return ['The Sun', where(sunG)];
-  const m = moonGal(F), [lm, bm] = lonLat(m.g); if (near(X(lm), Y(bm))) return ['The Moon', `${Math.round(m.lit * 100)}% lit`, where(m.g)];
+  if (near(...S(359.944, -0.046))) return ['Sgr A*', 'the black hole at the centre of the galaxy, 26,700 ly away', where(SGR.g)];
+  const sunG = sunGal(F); if (near(...S(...lonLat(sunG)))) return ['The Sun', where(sunG)];
+  const m = moonGal(F); if (near(...S(...lonLat(m.g)))) return ['The Moon', `${Math.round(m.lit * 100)}% lit`, where(m.g)];
   let best = null, bd = 11;
   for (const o of MESSIER) { const d = Math.hypot(o.x - x, o.y - y); if (d < bd) { bd = d; best = o; } }
   if (best) return [`${best.id}${best.name ? ` · ${best.name}` : ''}`, TYPE_NAME[best.type] || best.type, where(best.g)];
-  for (const s of STARS) if (near(X(s.l), Y(s.b))) return [s.name, `magnitude ${s.mag.toFixed(1)}`, where(s.g)];
-  const l = mod(lOf(x), 360), b = bOf(y);
-  if (Math.abs(b) > 90) return null;
-  const g = galVec(l, b);
+  for (const s of STARS) if (near(...S(s.l, s.b))) return [s.name, `magnitude ${s.mag.toFixed(1)}`, where(s.g)];
+  const sky = skyAt(x, y);
+  if (!sky) return null;
+  const l = mod(sky[0], 360), b = sky[1], g = galVec(l, b);
   return [Math.abs(b) < 12 ? `In ${along(l)}` : 'Sky', `longitude ${l.toFixed(0)}°, latitude ${b >= 0 ? '+' : '−'}${Math.abs(b).toFixed(0)}°`, where(g)];
 }
 function tipAt(x, y) { const t = pick(x, y); t ? showTip(t, x, y) : hideTip(); }
@@ -996,7 +1077,7 @@ cv.addEventListener('pointerdown', e => {
   const p = [...ptrs.values()];
   gest = p.length === 1 ? { x: p[0].x, y: p[0].y, lc: view.lc, bc: view.bc, moved: false }
     : { d: Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y), k: view.k, mx: (p[0].x + p[1].x) / 2, my: (p[0].y + p[1].y) / 2, moved: true };
-  if (p.length === 2) { gest.l = lOf(gest.mx); gest.b = bOf(gest.my); }
+  if (p.length === 2) { gest.u = uOf(gest.mx); gest.v = vOf(gest.my); }
 });
 cv.addEventListener('pointermove', e => {
   if (!ptrs.has(e.pointerId)) { if (e.pointerType === 'mouse') tipAt(e.clientX, e.clientY); return; }
@@ -1009,8 +1090,8 @@ cv.addEventListener('pointermove', e => {
     view.lc = gest.lc + dx / view.k; view.bc = gest.bc + dy / view.k; clampView(); invalidate();
   } else if (p.length === 2 && gest && gest.d) {
     const d = Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y), mx = (p[0].x + p[1].x) / 2, my = (p[0].y + p[1].y) / 2;
-    view.k = clamp(gest.k * d / gest.d, kFit, Math.max(kFit * 8, 30));
-    view.lc = gest.l - (W / 2 - mx) / view.k; view.bc = gest.b - (yMid() - my) / view.k; clampView(); invalidate();
+    view.k = clamp(gest.k * d / gest.d, kFit, maxK());
+    view.lc = gest.u - (W / 2 - mx) / view.k; view.bc = gest.v - (yMid() - my) / view.k; clampView(); invalidate();
   }
 });
 const endPtr = e => {
@@ -1031,6 +1112,27 @@ $('zin').addEventListener('click', () => zoomAt(W / 2, yMid(), view.k * 1.6));
 $('zout').addEventListener('click', () => zoomAt(W / 2, yMid(), view.k / 1.6));
 $('zfit').addEventListener('click', () => { view.k = kFit; view.lc = 0; view.bc = 0; clampView(); invalidate(); });
 if (matchMedia('(pointer: coarse)').matches) $('zoom').hidden = true;
+
+// ---------- the projection buttons: the choice is remembered, and ?proj=flat|mollweide|hammer in the address sets it ----------
+const PROJ_KEY = `${STORE}-proj`;
+const syncProj = () => document.querySelectorAll('[data-proj]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.proj === proj)));
+function setProj(name) {
+  if (!PROJ[name] || name === proj) return;
+  // zoomed in, keep the same point of the sky in the middle at the same zoom; zoomed out, show the whole of the new map
+  const mid = skyAt(W / 2, yMid()), rel = view.k / kFit;
+  proj = name; PJ = PROJ[name]; kFit = fitK(); view.k = kFit * rel;
+  if (mid && rel > 1.01) [view.lc, view.bc] = PJ.fwd(mid[0], mid[1]); else { view.lc = 0; view.bc = 0; }
+  clampView(); syncProj(); hideTip();
+  try { localStorage.setItem(PROJ_KEY, proj); } catch {}
+  invalidate();
+}
+document.querySelectorAll('[data-proj]').forEach(b => b.addEventListener('click', () => setProj(b.dataset.proj)));
+{
+  let p = new URLSearchParams(location.search).get('proj');
+  if (!PROJ[p]) { try { p = localStorage.getItem(PROJ_KEY); } catch {} }
+  if (PROJ[p]) { proj = p; PJ = PROJ[p]; }
+  syncProj();
+}
 
 // ---------- start: Dublin (or the last place picked), now; or a place and moment from the address ----------
 function frameLoop() { if (dirty) { dirty = false; try { draw(); } catch (e) { console.error(e); } } requestAnimationFrame(frameLoop); }
