@@ -144,7 +144,10 @@ input[type="range"]::-moz-range-thumb { width: 16px; height: 16px; border-radius
 .place li small, .place .now { display: block; color: var(--soft); font: 400 12px var(--font-data); }
 .place .msg:empty { display: none; }
 @media (max-width: 520px) { .caption { font-size: 11px; padding: 6px 9px; } .pill { padding: 7px 11px; } }
-/* on a phone, smaller projection buttons and a shorter place name, so the top bar fits */
+/* the projection buttons keep together at the right of the top bar, and drop to a second row when there isn't room;
+   on a phone they are smaller and the place name shorter, so that is rarely needed */
+.bar { flex-wrap: wrap; row-gap: 6px; }
+.projs { display: flex; gap: 6px; margin-left: auto; flex: none; }
 @media (max-width: 520px) { .pill[data-proj] { padding: 7px 8px; font-size: 11px; } #placebtn { max-width: 27vw; } }
 @media (max-width: 380px) { #placebtn { max-width: 22vw; } }
 </style>
@@ -156,10 +159,11 @@ input[type="range"]::-moz-range-thumb { width: 16px; height: 16px; border-radius
   <div class="bar">
     <button type="button" class="pill" id="keybtn" aria-expanded="false" aria-controls="key">Key</button>
     <button type="button" class="pill" id="placebtn" aria-expanded="false" aria-controls="place">Dublin</button>
-    <span class="spacer"></span>
-    <button type="button" class="pill toggle" data-proj="flat" aria-pressed="true" title="Plate carrée: even in longitude and latitude">Flat</button>
-    <button type="button" class="pill toggle" data-proj="mollweide" aria-pressed="false" title="Mollweide: an equal-area oval">Mollweide</button>
-    <button type="button" class="pill toggle" data-proj="hammer" aria-pressed="false" title="Hammer–Aitoff: an equal-area oval">Hammer</button>
+    <span class="projs" role="group" aria-label="Projection">
+      <button type="button" class="pill toggle" data-proj="flat" aria-pressed="true" title="Plate carrée: even in longitude and latitude">Flat</button>
+      <button type="button" class="pill toggle" data-proj="mollweide" aria-pressed="false" title="Mollweide: an equal-area oval">Mollweide</button>
+      <button type="button" class="pill toggle" data-proj="hammer" aria-pressed="false" title="Hammer–Aitoff: an equal-area oval">Hammer</button>
+    </span>
   </div>
   <p class="caption" id="caption" aria-live="polite"></p>
 </header>
@@ -877,23 +881,43 @@ function strokeRun(pts) {
   }
   ctx.stroke();
 }
-// the horizon: for each longitude, the latitude where it crosses. It runs from the map's left edge (+180°) to its right
-// (−180°), crossing each at the same latitude, which on the ovals is the same point of the outline seen from either side.
-const horizonB = (l, Z) => { const A = Z[0] * Math.cos(l * D2R) + Z[1] * Math.sin(l * D2R); return Math.atan2(-A * Math.sign(Z[2] || 1e-12), Math.abs(Z[2])) * R2D; };
+// the horizon on the map. It is a great circle, so it crosses the map's edge (longitude ±180°) just once, at latitude b0:
+// on the ovals, one point of the outline seen from either side. It is traced from there in even steps round the circle,
+// from the left edge to the right. (Even steps in longitude would cut corners where it passes close to a galactic pole,
+// as it does when the plane stands upright: there it climbs from −90° to +90° within a degree of longitude.)
 function horizonLine(Z) {
-  const pts = [], step = Math.min(1, 2 / view.k);
-  for (let l = 180; l > -180; l -= step) pts.push(P(l, horizonB(l, Z)));
-  pts.push(P(-180, horizonB(-180, Z)));
-  return pts;
+  const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  const unit = a => { const n = Math.hypot(...a); return a.map(x => x / n); };
+  let d = cross(Z, [0, 1, 0]); // where the horizon meets the plane of the edge meridian, the y = 0 plane...
+  if (Math.hypot(...d) < 1e-9) d = cross(unit([Z[0] + 1e-6, Z[1], Z[2] + 1e-6]), [0, 1, 0]); // (the horizon is that plane)
+  d = unit(d); if (d[0] > 0) d = d.map(x => -x); // ...on the edge (l = 180°), not on the meridian through the centre
+  let e = unit(cross(Z, d)); if (e[1] < 0) e = e.map(x => -x); // heading into the map from its left edge
+  const b0 = Math.asin(clamp(d[2], -1, 1)) * R2D, n = Math.ceil(360 / Math.min(1, 2 / view.k)), pts = [P(180, b0)];
+  for (let i = 1; i < n; i++) {
+    const t = i / n * TAU, c = Math.cos(t), s = Math.sin(t);
+    pts.push(S(...lonLat([c * d[0] + s * e[0], c * d[1] + s * e[1], c * d[2] + s * e[2]])));
+  }
+  pts.push(P(-180, b0));
+  return { pts, b0 };
 }
 // one side of the horizon: the line, then down (or up) the map's right edge to the pole, along the pole (an edge of the
 // flat map, a point of the ovals) and back along the left edge
-function sidePath(line, Z, pole) {
-  const b0 = horizonB(180, Z), n = 36, edge = [];
+function sidePath(hz, pole) {
+  const b0 = hz.b0, n = 36, edge = [];
   for (let i = 1; i <= n; i++) edge.push(P(-180, b0 + (pole - b0) * i / n));
   for (let i = 1; i < n; i++) edge.push(P(-180 + 360 * i / n, pole));
   for (let i = 0; i <= n; i++) edge.push(P(180, pole + (b0 - pole) * i / n));
-  ctx.beginPath(); trace(line); trace(edge, false); ctx.closePath();
+  ctx.beginPath(); trace(hz.pts); trace(edge, false); ctx.closePath();
+}
+// a chip to the right of a point, or to its left when it would run off the screen, or kept inside the screen when it
+// fits neither side; none for a point off the screen
+function sideChip(s, x, y, font, color) {
+  if (x < 0 || x > W || y < 0 || y > H) return { x: 0, y: 0, w: 0, h: 0 };
+  ctx.font = font;
+  const w = ctx.measureText(s).width + 8;
+  if (x + 10 + w <= W - 2) return chip(ctx, s, x + 10, y, font, color);
+  if (x - 10 - w >= 2) return chip(ctx, s, x - 10, y, font, color, 'right');
+  return chip(ctx, s, clamp(x - w / 2, 2, Math.max(2, W - w - 2)) + 4, y, font, color);
 }
 const SKY = [[11, 20, 38], [30, 42, 64], [59, 71, 96], [119, 129, 154], [174, 183, 199]];
 let caption = '', boxes = [];
@@ -934,12 +958,12 @@ function draw() {
   for (let i = 0; i <= 180; i++) { const lam = i * 2 * D2R; ecl.push(F.toG([Math.cos(lam), Math.cos(eps) * Math.sin(lam), Math.sin(eps) * Math.sin(lam)])); }
   ctx.strokeStyle = 'rgba(198,168,255,0.42)'; ctx.lineWidth = 1; ctx.setLineDash([5, 5]); strokeRun(ecl); ctx.setLineDash([]);
   // below the horizon, dimmed; above it, the twilight or daylight washing the band out
-  const line = horizonLine(Z), down = Z[2] > 0 ? -90 : 90; // the galactic pole on the side below the horizon
+  const hz = horizonLine(Z), down = Z[2] > 0 ? -90 : 90; // the galactic pole on the side below the horizon
   ctx.save(); outlinePath(); ctx.clip();
-  sidePath(line, Z, down); ctx.fillStyle = 'rgba(3,6,12,0.66)'; ctx.fill();
+  sidePath(hz, down); ctx.fillStyle = 'rgba(3,6,12,0.66)'; ctx.fill();
   if (sAlt > -18) {
     const i = skyIndex(sAlt), c = SKY[Math.max(1, i)], a = Math.pow(clamp((sAlt + 18) / 18, 0, 1), 1.6) * 0.62;
-    sidePath(line, Z, -down); ctx.fillStyle = `rgba(${c.join(',')},${a.toFixed(3)})`; ctx.fill();
+    sidePath(hz, -down); ctx.fillStyle = `rgba(${c.join(',')},${a.toFixed(3)})`; ctx.fill();
   }
   // hatched: never rises from here (always below the horizon, so drawn over the dimming)
   const mask = neverMask(jd);
@@ -959,7 +983,7 @@ function draw() {
   const south = PLACE.lat >= 0 ? 180 : 0;
   for (const alt of [30, 60]) { const [x, y] = S(...lonLat(atAltAz(alt, south, F))); if (x > 20 && x < W - 20 && y > mapTop + 40 && y < mapBot - 10) halo(ctx, `${alt}°`, x + 12, y - 8, FONT(9.5), 'rgba(227,233,242,0.75)', 'left'); }
   // the horizon, with its compass points
-  ctx.beginPath(); trace(line); ctx.strokeStyle = C.accent; ctx.lineWidth = 1.7; ctx.stroke();
+  ctx.beginPath(); trace(hz.pts); ctx.strokeStyle = C.accent; ctx.lineWidth = 1.7; ctx.stroke();
   for (let az = 0; az < 360; az += 45) {
     const [l, b] = lonLat(atAltAz(0, az, F)), [l2, b2] = lonLat(atAltAz(6, az, F)), [x, y] = S(l, b), [x2, y2] = S(l2, b2);
     if (x < 6 || x > W - 6 || y < mapTop || y > mapBot) continue;
@@ -973,7 +997,7 @@ function draw() {
   // overhead
   { const [x, y] = S(...lonLat(Z));
     ctx.strokeStyle = C.accent; ctx.lineWidth = 1.4; ctx.beginPath(); ctx.moveTo(x - 7, y); ctx.lineTo(x + 7, y); ctx.moveTo(x, y - 7); ctx.lineTo(x, y + 7); ctx.stroke();
-    boxes.push(chip(ctx, 'overhead', x + 10, y, FONT(9.5, 600), C.accent)); }
+    boxes.push(sideChip('overhead', x, y, FONT(9.5, 600), C.accent)); }
   // the Sun and the Moon
   { const [x, y] = S(...lonLat(sunG)), g = ctx.createRadialGradient(x, y, 0, x, y, 22);
     g.addColorStop(0, 'rgba(255,231,168,0.55)'); g.addColorStop(1, 'rgba(255,231,168,0)'); ctx.fillStyle = g; ctx.fillRect(x - 22, y - 22, 44, 44);
@@ -987,7 +1011,7 @@ function draw() {
   // Sgr A*
   const gAlt = altAz(SGR.g, F)[0], [xg, yg] = S(359.944, -0.046);
   ctx.strokeStyle = C.core; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.arc(xg, yg, 6, 0, TAU); ctx.stroke();
-  boxes.push(chip(ctx, `Sgr A* · ${gAlt > -0.5667 ? upText(gAlt) : 'below the horizon'}`, xg + 10, yg - 13, FONT(10, 600), C.core));
+  boxes.push(sideChip(`Sgr A* · ${gAlt > -0.5667 ? upText(gAlt) : 'below the horizon'}`, xg, yg - 13, FONT(10, 600), C.core));
   // labels: constellations along the band, star names, Messier numbers when zoomed in, longitude and latitude
   ctx.save(); ctx.letterSpacing = '1.5px';
   for (const [l, s] of BAND_LABELS) { const [x, y] = S(l, l === 203 ? -27 : l === 348 ? 22 : 13); if (x > 40 && x < W - 40 && y > mapTop + 30 && free(x - 40, y - 7, 80, 14)) halo(ctx, s, x, y, FONT(9.5, 500), 'rgba(227,233,242,0.62)'); }
@@ -1138,6 +1162,8 @@ document.querySelectorAll('[data-proj]').forEach(b => b.addEventListener('click'
 function frameLoop() { if (dirty) { dirty = false; try { draw(); } catch (e) { console.error(e); } } requestAnimationFrame(frameLoop); }
 startFromAddress();
 window.addEventListener('resize', layout);
+// the top bar can wrap onto a second row (a long place name, a narrow screen, large text): the map starts below it
+if (window.ResizeObserver) new ResizeObserver(() => layout()).observe($('hud-top').querySelector('.bar'));
 layout();
 requestAnimationFrame(frameLoop);
 if (document.fonts && document.fonts.load) Promise.all(['10px "IBM Plex Mono"', '600 10px "IBM Plex Mono"'].map(f => document.fonts.load(f))).catch(() => {}).then(() => { layout(); });
